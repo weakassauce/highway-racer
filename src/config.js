@@ -26,10 +26,12 @@ export const CAR = {
   rollingResist: 0.6,     // base m/s² when coasting
   topSpeed: 110,          // m/s (~395 km/h)
   boostMul: 1.45,         // shift multiplier on throttle
-  // Steering
-  maxSteer: 0.55,         // radians at full input
+  // Steering — yaw rate uses a hyperbolic falloff so steering gets
+  // noticeably worse the faster you go.
+  maxSteer: 0.55,         // radians, smoothed input target
   steerLerp: 7,           // how fast steer angle eases toward input
-  steerSpeedAttenuation: 0.012, // tightens steering at low speed, loosens at high
+  yawAtRest: 60,          // numerator of yaw curve (rad/s scale)
+  yawHalfSpeed: 50,       // at this speed, yaw authority is half of zero-speed value
   // Grip / drift
   lateralGrip: 6.5,       // how aggressively sideways speed bleeds off
   handbrakeGripMul: 0.18, // grip multiplier while handbrake held

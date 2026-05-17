@@ -81,15 +81,19 @@ export class Car {
     this.crashed = 0;
   }
 
+  // Three.js convention: Y rotation by `h` applied to the local -Z gives
+  // (-sin(h), 0, -cos(h)). Using +sin previously made the physics-forward
+  // disagree with the visible mesh rotation, so steering went the wrong way.
   forward(out = new THREE.Vector3()) {
-    return out.set(Math.sin(this.heading), 0, -Math.cos(this.heading));
+    return out.set(-Math.sin(this.heading), 0, -Math.cos(this.heading));
   }
   right(out = new THREE.Vector3()) {
-    return out.set(Math.cos(this.heading), 0, Math.sin(this.heading));
+    // right = forward × up
+    return out.set(Math.cos(this.heading), 0, -Math.sin(this.heading));
   }
   speed() { return this.velocity.length(); }
   forwardSpeed() {
-    return this.velocity.x * Math.sin(this.heading) + this.velocity.z * -Math.cos(this.heading);
+    return this.velocity.x * -Math.sin(this.heading) + this.velocity.z * -Math.cos(this.heading);
   }
 
   update(dt, controls) {
@@ -134,11 +138,12 @@ export class Car {
     const gripMul = this.handbraking ? CAR.handbrakeGripMul : 1;
     vLat *= Math.exp(-CAR.lateralGrip * gripMul * dt);
 
-    // Steering: heading change scales with longitudinal speed (sign-sensitive
-    // so reverse steers the way you'd expect)
-    const steerEffective = this.steer
-      * Math.max(0.2, 1 - Math.abs(vLong) * CAR.steerSpeedAttenuation);
-    this.heading += steerEffective * vLong * dt * 0.18;
+    // Steering: yaw authority falls off with speed (so a flick at 30 km/h
+    // is a wide arc at 300 km/h). Hyperbolic curve, sign-sensitive so
+    // reversing steers the way you'd expect.
+    const v = Math.abs(vLong);
+    const yawAuthority = CAR.yawAtRest / (CAR.yawHalfSpeed + v);
+    this.heading += this.steer * yawAuthority * Math.sign(vLong) * dt;
 
     // Recompose velocity in updated heading frame
     const newFwd = this.forward();
