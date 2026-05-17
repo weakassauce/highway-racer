@@ -47,12 +47,15 @@ let wheelTemplate = null;
 let wheelTemplateGLB = null; // raw GLB scene before normalize, so we can resize later
 
 // All tunable from devtools as `wheelTune.<field>` + `applyWheels()`.
-// Defaults sized for a Porsche 911 GT3 RS body proportion.
+// Defaults match real Porsche 911 GT3 RS proportions:
+//   wheelbase 2.45 m / 4.5 m length ≈ 0.272 half-fraction
+//   track 1.55 m / 1.9 m width ≈ 0.408 half-fraction
+//   wheel-with-tire OD ≈ 0.72 m
 const wheelTune = {
-  lateral: 0.46,       // hub x = ±lateral × bbox.x      (width fraction from center)
-  longitudinal: 0.30,  // hub z = ±longitudinal × bbox.z (length fraction from center)
-  diameter: 0.78,      // wheel.glb sized to this stud diameter
-  yLift: 0.05,         // raise hubs above tire-touches-ground by this much
+  lateral: 0.41,       // hub x = ±lateral × bbox.x      (half-fraction of full width)
+  longitudinal: 0.27,  // hub z = ±longitudinal × bbox.z (half-fraction of full length)
+  diameter: 0.72,      // wheel.glb sized to this stud diameter
+  yLift: 0.02,         // small lift so the tire doesn't sink into the road
 };
 let carBBox = null;
 
