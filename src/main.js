@@ -55,7 +55,7 @@ const wheelTune = {
   lateral: 0.41,       // hub x = ±lateral × bbox.x      (half-fraction of full width)
   longitudinal: 0.27,  // hub z = ±longitudinal × bbox.z (half-fraction of full length)
   diameter: 0.72,      // wheel.glb sized to this stud diameter
-  yLift: 0.02,         // small lift so the tire doesn't sink into the road
+  yLift: -0.08,        // negative drops the wheels into the arch a bit
 };
 let carBBox = null;
 
@@ -84,7 +84,9 @@ function reAttachWheels() {
   const meshes = hubs.map((hub) => {
     if (!wheelTemplate) return null;
     const clone = wheelTemplate.clone(true);
-    if (hub.x < 0) clone.scale.x = -clone.scale.x;
+    // Mirror right-side wheels so the rim face points outward on both sides.
+    // (The normalized template's rim faces -X; right wheels (x > 0) need +X.)
+    if (hub.x > 0) clone.scale.x = -clone.scale.x;
     return clone;
   });
   car.attachWheels({ wheels: meshes, wheelHubs: hubs });
