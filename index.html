@@ -1,0 +1,29 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>Highway Racer</title>
+    <style>
+      html, body { margin: 0; padding: 0; height: 100%; overflow: hidden; background: #050912; color: #d0e0ff; font-family: ui-monospace, Menlo, Consolas, monospace; }
+      #app { position: fixed; inset: 0; }
+      #hud { position: fixed; inset: 0; pointer-events: none; }
+      #hud canvas { width: 100%; height: 100%; display: block; }
+      #help {
+        position: fixed; left: 14px; bottom: 14px; padding: 8px 12px;
+        background: rgba(10,15,25,0.6); border: 1px solid #2a3a55; border-radius: 6px;
+        font-size: 12px; line-height: 1.5; color: #aac7f5;
+      }
+      #help b { color: #ffffff; }
+    </style>
+  </head>
+  <body>
+    <div id="app"></div>
+    <div id="hud"><canvas></canvas></div>
+    <div id="help">
+      <div><b>W/↑</b> throttle &nbsp; <b>S/↓</b> brake/reverse &nbsp; <b>A/D</b> or <b>←/→</b> steer</div>
+      <div><b>Space</b> handbrake &nbsp; <b>Shift</b> boost &nbsp; <b>R</b> reset &nbsp; <b>V</b> view</div>
+    </div>
+    <script type="module" src="/src/main.js"></script>
+  </body>
+</html>
