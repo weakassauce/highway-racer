@@ -63,6 +63,32 @@ export function normalizeCarModel(root, targetLength = 4.5) {
   return root;
 }
 
+// Normalize a wheel GLB so it can be parented inside a spin-pivot whose
+// rotation.x is the rolling angle. TRELLIS reconstructs the wheel facing
+// the camera (axis along Z); we rotate so its axis becomes X.
+export function normalizeWheelModel(root, targetDiameter = 0.8) {
+  const box = new THREE.Box3().setFromObject(root);
+  const center = box.getCenter(new THREE.Vector3());
+  root.position.sub(center);
+  const size = box.getSize(new THREE.Vector3());
+  const longest = Math.max(size.x, size.y, size.z);
+  if (longest > 0) root.scale.setScalar(targetDiameter / longest);
+  root.rotation.y = Math.PI / 2;
+  root.traverse((o) => {
+    if (!o.isMesh) return;
+    o.castShadow = false;
+    o.receiveShadow = false;
+    const mats = Array.isArray(o.material) ? o.material : [o.material];
+    for (const m of mats) {
+      if (!m) continue;
+      if ('roughness' in m) m.roughness = Math.min(0.4, m.roughness ?? 0.5);
+      if ('envMapIntensity' in m) m.envMapIntensity = 1.4;
+      m.needsUpdate = true;
+    }
+  });
+  return root;
+}
+
 export async function forgeRequest(prompt) {
   const r = await fetch('/forge/generate', {
     method: 'POST',

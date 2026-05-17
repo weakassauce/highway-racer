@@ -7,7 +7,7 @@ import { TrafficManager } from './traffic.js';
 import { ChaseCamera } from './camera.js';
 import { Input } from './input.js';
 import { HUD } from './hud.js';
-import { tryLoadGLB, normalizeCarModel } from './asset_loader.js';
+import { tryLoadGLB, normalizeCarModel, normalizeWheelModel } from './asset_loader.js';
 
 const app = document.getElementById('app');
 const renderer = new THREE.WebGLRenderer({ antialias: true, powerPreference: 'high-performance' });
@@ -39,14 +39,24 @@ const world = new World(scene);
 const carMesh = buildPlaceholderCar();
 scene.add(carMesh);
 const car = new Car(carMesh);
-car.attachWheels();
+
+// Wheel template — swapped in when wheel.glb lands; until then we use
+// the procedural fallback.
+let wheelTemplate = null;
+car.attachWheels(wheelTemplate);
+
+tryLoadGLB('/assets/wheel.glb').then((g) => {
+  if (!g) return;
+  wheelTemplate = normalizeWheelModel(g, 0.8);
+  car.attachWheels(wheelTemplate);
+});
 
 // Hot-swap player mesh to generated GLB when present (then re-attach wheels)
 tryLoadGLB('/assets/player_car.glb').then((g) => {
   if (!g) return;
   car.mesh.clear();
   car.mesh.add(normalizeCarModel(g, CAR.length));
-  car.attachWheels();
+  car.attachWheels(wheelTemplate);
 });
 
 // Traffic

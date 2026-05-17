@@ -67,39 +67,60 @@ export class Car {
     this.wheelAngle = 0;
   }
 
-  // Build 4 wheel pivots and parent them to car.mesh. Call after any
-  // mesh swap (e.g. GLB hot-load) since the swap clears children.
-  attachWheels() {
-    for (const p of this.wheels) this.mesh.remove(p);
+  // Build 4 wheel rigs. Each rig is two nested Groups: an outer "steer"
+  // pivot (rotation.y) and an inner "spin" pivot (rotation.x). This
+  // separation avoids Euler-order wobble — spinning never affects the
+  // steer axis and vice versa.
+  // If `template` (a GLB scene) is provided, it's cloned for each wheel
+  // and parented inside the spin pivot. Otherwise a procedural fallback
+  // is built from cylinders.
+  attachWheels(template = null) {
+    for (const w of this.wheels) this.mesh.remove(w.steer);
     this.wheels = [];
-    const geo = new THREE.CylinderGeometry(WHEEL_RADIUS, WHEEL_RADIUS, WHEEL_THICKNESS, 28);
-    const mat = new THREE.MeshStandardMaterial({
-      color: 0x0a0a0c, roughness: 0.85, metalness: 0.05,
-    });
-    // Tiny inner hub disc so the spinning is obvious even at speed
-    const hubGeo = new THREE.CylinderGeometry(WHEEL_RADIUS * 0.55, WHEEL_RADIUS * 0.55, WHEEL_THICKNESS + 0.01, 12);
-    const hubMat = new THREE.MeshStandardMaterial({
-      color: 0xcfd4dc, roughness: 0.25, metalness: 0.8,
-    });
+
     const positions = [
       // front-left, front-right, rear-left, rear-right
-      [-CAR.width / 2 * WHEEL_LATERAL, -CAR.length * WHEEL_LONGITUDINAL],
-      [ CAR.width / 2 * WHEEL_LATERAL, -CAR.length * WHEEL_LONGITUDINAL],
-      [-CAR.width / 2 * WHEEL_LATERAL,  CAR.length * WHEEL_LONGITUDINAL],
-      [ CAR.width / 2 * WHEEL_LATERAL,  CAR.length * WHEEL_LONGITUDINAL],
+      [-CAR.width / 2 * WHEEL_LATERAL, -CAR.length * WHEEL_LONGITUDINAL, true],
+      [ CAR.width / 2 * WHEEL_LATERAL, -CAR.length * WHEEL_LONGITUDINAL, true],
+      [-CAR.width / 2 * WHEEL_LATERAL,  CAR.length * WHEEL_LONGITUDINAL, false],
+      [ CAR.width / 2 * WHEEL_LATERAL,  CAR.length * WHEEL_LONGITUDINAL, false],
     ];
-    for (const [x, z] of positions) {
-      const pivot = new THREE.Group();
-      pivot.position.set(x, WHEEL_RADIUS, z);
-      const wheel = new THREE.Mesh(geo, mat);
-      wheel.rotation.z = Math.PI / 2; // cylinder axis → world X (so it spins around X)
-      const hub = new THREE.Mesh(hubGeo, hubMat);
-      hub.rotation.z = Math.PI / 2;
-      pivot.add(wheel);
-      pivot.add(hub);
-      this.mesh.add(pivot);
-      this.wheels.push(pivot);
+
+    for (let i = 0; i < positions.length; i++) {
+      const [x, z, isFront] = positions[i];
+      const steer = new THREE.Group();
+      steer.position.set(x, WHEEL_RADIUS, z);
+      const spin = new THREE.Group();
+      steer.add(spin);
+
+      let wheelMesh;
+      if (template) {
+        wheelMesh = template.clone(true);
+        // Mirror left-side wheels so the rim face points outward on both sides
+        if (x < 0) wheelMesh.scale.x = -wheelMesh.scale.x;
+      } else {
+        wheelMesh = this._buildPlaceholderWheel();
+      }
+      spin.add(wheelMesh);
+
+      this.mesh.add(steer);
+      this.wheels.push({ steer, spin, isFront });
     }
+  }
+
+  _buildPlaceholderWheel() {
+    const g = new THREE.Group();
+    const tireGeo = new THREE.CylinderGeometry(WHEEL_RADIUS, WHEEL_RADIUS, WHEEL_THICKNESS, 28);
+    const tireMat = new THREE.MeshStandardMaterial({ color: 0x0a0a0c, roughness: 0.85, metalness: 0.05 });
+    const tire = new THREE.Mesh(tireGeo, tireMat);
+    tire.rotation.z = Math.PI / 2;
+    g.add(tire);
+    const hubGeo = new THREE.CylinderGeometry(WHEEL_RADIUS * 0.55, WHEEL_RADIUS * 0.55, WHEEL_THICKNESS + 0.01, 12);
+    const hubMat = new THREE.MeshStandardMaterial({ color: 0xcfd4dc, roughness: 0.25, metalness: 0.8 });
+    const hub = new THREE.Mesh(hubGeo, hubMat);
+    hub.rotation.z = Math.PI / 2;
+    g.add(hub);
+    return g;
   }
 
   reset() {
@@ -189,15 +210,13 @@ export class Car {
     this.mesh.position.copy(this.position);
     this.mesh.rotation.set(0, this.heading, 0);
 
-    // Spin wheels at angular velocity = vLong / wheelRadius. Front wheels also
-    // rotate around Y to show the steering input.
+    // Spin wheels (inner pivot, rotation.x) at vLong / radius. Steer
+    // front wheels (outer pivot, rotation.y) by the smoothed input.
     if (this.wheels.length > 0) {
       this.wheelAngle += (vLong / WHEEL_RADIUS) * dt;
-      const steerVis = this.steer;
-      for (let i = 0; i < this.wheels.length; i++) {
-        const p = this.wheels[i];
-        p.rotation.x = this.wheelAngle;
-        p.rotation.y = i < 2 ? steerVis : 0; // front pair (i<2) steers
+      for (const w of this.wheels) {
+        w.spin.rotation.x = this.wheelAngle;
+        w.steer.rotation.y = w.isFront ? this.steer : 0;
       }
     }
 
