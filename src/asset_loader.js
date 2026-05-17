@@ -12,17 +12,34 @@ export async function tryLoadGLB(url) {
   });
 }
 
-// Normalize a generated car GLB: center, scale to a target length, rotate so
-// nose faces -Z, polish the materials so painted panels look glossy.
+// Normalize a generated car GLB: center, scale to a target length, auto-orient
+// the long axis to Z, then lift the model so its wheels sit on y = 0.
+// Polish the materials so painted panels look glossy.
 export function normalizeCarModel(root, targetLength = 4.5) {
-  const box = new THREE.Box3().setFromObject(root);
-  const size = box.getSize(new THREE.Vector3());
+  // 1. Center on origin so subsequent rotations/scales spin around the model.
+  let box = new THREE.Box3().setFromObject(root);
   const center = box.getCenter(new THREE.Vector3());
   root.position.sub(center);
-  const longest = Math.max(size.x, size.y, size.z);
+
+  // 2. Scale by longest axis (use pre-scale bbox)
+  const preSize = box.getSize(new THREE.Vector3());
+  const longest = Math.max(preSize.x, preSize.y, preSize.z);
   if (longest > 0) root.scale.setScalar(targetLength / longest);
-  // TRELLIS GLBs face +Z by default; flip 180° so nose points -Z
-  root.rotation.y = Math.PI;
+
+  // 3. Auto-rotate so the car's longest horizontal dimension is along Z (length).
+  //    TRELLIS sometimes outputs the car sideways (long axis on X).
+  box = new THREE.Box3().setFromObject(root);
+  const size = box.getSize(new THREE.Vector3());
+  let rotY = 0;
+  if (size.x > size.z && size.x > size.y) rotY = Math.PI / 2;
+  // Apply the configured nose flip (TRELLIS may face either +Z or -Z; this
+  // lets us toggle without recompiling).
+  if (window.carNoseFlip) rotY += Math.PI;
+  root.rotation.y = rotY;
+
+  // 4. Lift so wheels touch the road (bottom of bbox = 0)
+  box = new THREE.Box3().setFromObject(root);
+  root.position.y -= box.min.y;
 
   root.traverse((o) => {
     if (!o.isMesh) return;

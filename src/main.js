@@ -72,6 +72,7 @@ function frame(now) {
   const dt = Math.min(0.05, (now - last) / 1000);
   last = now;
 
+  input.decayLook(dt);
   const controls = input.axes();
   for (const a of input.drainActions()) {
     if (a === 'reset') {
@@ -99,7 +100,7 @@ function frame(now) {
   }
 
   world.update(car.position.z);
-  chase.update(dt, car);
+  chase.update(dt, car, controls);
   hud.draw({ car });
 
   renderer.render(scene, camera);

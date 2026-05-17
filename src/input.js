@@ -1,12 +1,47 @@
-// Keyboard → normalized control axes.
+// Keyboard + mouse-look input. Hold right-mouse to orbit the camera around
+// the car; release and the camera eases back to its default chase pose.
+
+const LOOK_SENSITIVITY = 0.003; // radians per pixel of mouse movement
+const LOOK_PITCH_LIMIT = 0.7;
 
 export class Input {
   constructor() {
     this.keys = new Set();
     this.actions = [];
+    this.lookActive = false;
+    this.lookYaw = 0;
+    this.lookPitch = 0;
+
     window.addEventListener('keydown', (e) => this._down(e));
     window.addEventListener('keyup', (e) => this._up(e));
-    window.addEventListener('blur', () => this.keys.clear());
+    window.addEventListener('blur', () => { this.keys.clear(); this.lookActive = false; });
+
+    // Mouse-look: hold right-mouse to rotate camera around car
+    window.addEventListener('mousedown', (e) => {
+      if (e.button === 2) this.lookActive = true;
+    });
+    window.addEventListener('mouseup', (e) => {
+      if (e.button === 2) this.lookActive = false;
+    });
+    window.addEventListener('mousemove', (e) => {
+      if (!this.lookActive) return;
+      this.lookYaw   -= e.movementX * LOOK_SENSITIVITY;
+      this.lookPitch -= e.movementY * LOOK_SENSITIVITY;
+      if (this.lookPitch > LOOK_PITCH_LIMIT) this.lookPitch = LOOK_PITCH_LIMIT;
+      if (this.lookPitch < -LOOK_PITCH_LIMIT) this.lookPitch = -LOOK_PITCH_LIMIT;
+    });
+    window.addEventListener('contextmenu', (e) => e.preventDefault());
+  }
+
+  // Called from frame loop so the look angles decay back to neutral when
+  // the player releases the right-mouse button.
+  decayLook(dt) {
+    if (this.lookActive) return;
+    const k = Math.exp(-dt * 5);
+    this.lookYaw *= k;
+    this.lookPitch *= k;
+    if (Math.abs(this.lookYaw) < 0.0005) this.lookYaw = 0;
+    if (Math.abs(this.lookPitch) < 0.0005) this.lookPitch = 0;
   }
 
   _down(e) {
@@ -35,6 +70,8 @@ export class Input {
       steer: -steer,                // left key = negative heading (steer left)
       boost: k.has('ShiftLeft') || k.has('ShiftRight'),
       handbrake: k.has('Space'),
+      lookYaw: this.lookYaw,
+      lookPitch: this.lookPitch,
     };
   }
 
