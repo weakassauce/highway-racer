@@ -39,12 +39,14 @@ const world = new World(scene);
 const carMesh = buildPlaceholderCar();
 scene.add(carMesh);
 const car = new Car(carMesh);
+car.attachWheels();
 
-// Hot-swap player mesh to generated GLB when present
+// Hot-swap player mesh to generated GLB when present (then re-attach wheels)
 tryLoadGLB('/assets/player_car.glb').then((g) => {
   if (!g) return;
   car.mesh.clear();
   car.mesh.add(normalizeCarModel(g, CAR.length));
+  car.attachWheels();
 });
 
 // Traffic
