@@ -7,7 +7,7 @@ import { TrafficManager } from './traffic.js';
 import { ChaseCamera } from './camera.js';
 import { Input } from './input.js';
 import { HUD } from './hud.js';
-import { tryLoadGLB, normalizeCarModel, normalizeWheelModel, extractWheelsFromCar } from './asset_loader.js';
+import { tryLoadGLB, normalizeCarModel } from './asset_loader.js';
 
 const app = document.getElementById('app');
 const renderer = new THREE.WebGLRenderer({ antialias: true, powerPreference: 'high-performance' });
@@ -40,22 +40,13 @@ const carMesh = buildPlaceholderCar();
 scene.add(carMesh);
 const car = new Car(carMesh);
 
-// Procedural fallback wheels until the player_car.glb loads, at which point
-// we extract the GLB's own wheel triangles and use those (so the wheels
-// match the car's actual look — paint, alloy spokes, etc.).
-car.attachWheels(null);
-
+// No wheel rigs — just load the player_car.glb and let the body render
+// with whatever wheels it has baked in. (Wheel extraction / procedural
+// alloys both removed.)
 tryLoadGLB('/assets/player_car.glb').then((g) => {
   if (!g) return;
-  const root = normalizeCarModel(g, CAR.length);
   car.mesh.clear();
-  car.mesh.add(root);
-  // Pull the wheels OUT of the body geometry into 4 separate meshes that
-  // can rotate independently. Body keeps everything else.
-  const extracted = extractWheelsFromCar(root, CAR.length, CAR.width);
-  const hasAny = extracted.wheels.some((m) => m);
-  car.attachWheels(hasAny ? extracted : null);
-  console.log('[wheels] extracted:', extracted.wheels.map((m) => m ? m.geometry.attributes.position.count : 0));
+  car.mesh.add(normalizeCarModel(g, CAR.length));
 });
 
 // Traffic
