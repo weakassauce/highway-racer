@@ -67,17 +67,15 @@ export class Car {
     this.wheelAngle = 0;
   }
 
-  // Build 4 wheel rigs. Each rig is two nested Groups: an outer "steer"
-  // pivot (rotation.y) and an inner "spin" pivot (rotation.x). Separating
-  // the rotations avoids Euler-order wobble.
-  // If `template` is provided, each rig clones it. Without a template we
-  // skip adding wheels at all — the body GLB has integrated wheels that
-  // look right (they just won't spin until a wheel asset is loaded).
+  // Build 4 wheel rigs. Each rig is two nested Groups: outer "steer"
+  // pivot (rotation.y) + inner "spin" pivot (rotation.x). Avoids
+  // Euler-order wobble.
+  // Without a `template`, build a multi-spoke alloy wheel procedurally —
+  // these are detailed enough to look right and they occlude the GLB's
+  // baked-in static wheels.
   attachWheels(template = null) {
     for (const w of this.wheels) this.mesh.remove(w.steer);
     this.wheels = [];
-
-    if (!template) return;
 
     const positions = [
       // front-left, front-right, rear-left, rear-right
@@ -94,7 +92,7 @@ export class Car {
       const spin = new THREE.Group();
       steer.add(spin);
 
-      const wheelMesh = template.clone(true);
+      const wheelMesh = template ? template.clone(true) : this._buildAlloyWheel();
       // Mirror left-side wheels so the rim face points outward on both sides
       if (x < 0) wheelMesh.scale.x = -wheelMesh.scale.x;
       spin.add(wheelMesh);
@@ -104,18 +102,60 @@ export class Car {
     }
   }
 
-  _buildPlaceholderWheel() {
+  // Multi-spoke alloy wheel with tire, brake disc, hub. Built so the spin
+  // axis is X (matches the spin pivot's rotation.x). Detail is enough that
+  // motion reads at speed.
+  _buildAlloyWheel() {
     const g = new THREE.Group();
-    const tireGeo = new THREE.CylinderGeometry(WHEEL_RADIUS, WHEEL_RADIUS, WHEEL_THICKNESS, 28);
-    const tireMat = new THREE.MeshStandardMaterial({ color: 0x0a0a0c, roughness: 0.85, metalness: 0.05 });
-    const tire = new THREE.Mesh(tireGeo, tireMat);
-    tire.rotation.z = Math.PI / 2;
+    const R = WHEEL_RADIUS;
+    const T = WHEEL_THICKNESS;
+
+    // Outer tire (matte black torus)
+    const tire = new THREE.Mesh(
+      new THREE.TorusGeometry(R * 0.92, R * 0.22, 10, 28),
+      new THREE.MeshStandardMaterial({ color: 0x0a0a0c, roughness: 0.95, metalness: 0.0 }),
+    );
+    tire.rotation.y = Math.PI / 2; // torus axis along X
     g.add(tire);
-    const hubGeo = new THREE.CylinderGeometry(WHEEL_RADIUS * 0.55, WHEEL_RADIUS * 0.55, WHEEL_THICKNESS + 0.01, 12);
-    const hubMat = new THREE.MeshStandardMaterial({ color: 0xcfd4dc, roughness: 0.25, metalness: 0.8 });
-    const hub = new THREE.Mesh(hubGeo, hubMat);
+
+    // Brake disc (sits behind the rim, dark steel)
+    const brake = new THREE.Mesh(
+      new THREE.CylinderGeometry(R * 0.7, R * 0.7, T * 0.18, 28),
+      new THREE.MeshStandardMaterial({ color: 0x3a3d42, roughness: 0.45, metalness: 0.75 }),
+    );
+    brake.rotation.z = Math.PI / 2;
+    brake.position.x = -T * 0.12;
+    g.add(brake);
+
+    // Rim base disc (polished aluminum)
+    const rim = new THREE.Mesh(
+      new THREE.CylinderGeometry(R * 0.78, R * 0.78, T * 0.55, 28),
+      new THREE.MeshStandardMaterial({ color: 0x8d92a0, roughness: 0.25, metalness: 0.85 }),
+    );
+    rim.rotation.z = Math.PI / 2;
+    g.add(rim);
+
+    // 5 spokes (long thin boxes radiating outward in the YZ plane)
+    const spokeMat = new THREE.MeshStandardMaterial({ color: 0xc8ccd4, roughness: 0.2, metalness: 0.9 });
+    const spokeGeo = new THREE.BoxGeometry(T * 0.7, R * 0.7, T * 0.5);
+    spokeGeo.translate(0, R * 0.35, 0);
+    for (let i = 0; i < 5; i++) {
+      const angle = (i / 5) * Math.PI * 2;
+      const spoke = new THREE.Mesh(spokeGeo, spokeMat);
+      spoke.position.x = T * 0.12; // sit just outside the rim base
+      spoke.rotation.x = angle;
+      g.add(spoke);
+    }
+
+    // Central hub cap
+    const hub = new THREE.Mesh(
+      new THREE.CylinderGeometry(R * 0.22, R * 0.22, T * 0.75, 16),
+      new THREE.MeshStandardMaterial({ color: 0x1a1c20, roughness: 0.3, metalness: 0.85 }),
+    );
     hub.rotation.z = Math.PI / 2;
+    hub.position.x = T * 0.18;
     g.add(hub);
+
     return g;
   }
 
