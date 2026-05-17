@@ -7,7 +7,7 @@ import { TrafficManager } from './traffic.js';
 import { ChaseCamera } from './camera.js';
 import { Input } from './input.js';
 import { HUD } from './hud.js';
-import { tryLoadGLB, normalizeCarModel, normalizeWheelModel, extractWheelsFromCar } from './asset_loader.js';
+import { tryLoadGLB, normalizeCarModel, normalizeWheelModel } from './asset_loader.js';
 
 const app = document.getElementById('app');
 const renderer = new THREE.WebGLRenderer({ antialias: true, powerPreference: 'high-performance' });
@@ -40,26 +40,29 @@ const carMesh = buildPlaceholderCar();
 scene.add(carMesh);
 const car = new Car(carMesh);
 
-// Wheel rig: when player_car.glb arrives, extract its baked-in wheels (cuts
-// the wheel triangles out of the body), then replace each with a clone of
-// the AssetForge wheel.glb at the extracted hub position. The result is
-// proper spinning wheels at the correct spots.
+// New flow: the player_car GLB is generated wheel-less, so we don't try to
+// extract anything from it. Wheels are 4 clones of wheel.glb placed at
+// canonical hub positions derived from CAR dimensions.
 let wheelTemplate = null;
-let extractedHubs = null;
-let carLoaded = false;
+
+const STANDARD_HUBS = [
+  { x: -CAR.width * 0.40, y: 0.40, z: -CAR.length * 0.32, isFront: true  },
+  { x:  CAR.width * 0.40, y: 0.40, z: -CAR.length * 0.32, isFront: true  },
+  { x: -CAR.width * 0.40, y: 0.40, z:  CAR.length * 0.32, isFront: false },
+  { x:  CAR.width * 0.40, y: 0.40, z:  CAR.length * 0.32, isFront: false },
+];
 
 function reAttachWheels() {
-  if (!carLoaded || !extractedHubs) return;
-  const meshes = extractedHubs.map((hub) => {
-    if (wheelTemplate) {
-      const clone = wheelTemplate.clone(true);
-      if (hub.x < 0) clone.scale.x = -clone.scale.x;
-      return clone;
-    }
-    return null; // fall back to procedural alloy
+  const meshes = STANDARD_HUBS.map((hub) => {
+    if (!wheelTemplate) return null;
+    const clone = wheelTemplate.clone(true);
+    if (hub.x < 0) clone.scale.x = -clone.scale.x;
+    return clone;
   });
-  car.attachWheels({ wheels: meshes, wheelHubs: extractedHubs });
+  car.attachWheels({ wheels: meshes, wheelHubs: STANDARD_HUBS });
 }
+// Attach immediately so the placeholder car has visible alloy fallbacks
+reAttachWheels();
 
 tryLoadGLB('/assets/wheel.glb').then((g) => {
   if (!g) return;
@@ -69,17 +72,9 @@ tryLoadGLB('/assets/wheel.glb').then((g) => {
 
 tryLoadGLB('/assets/player_car.glb').then((g) => {
   if (!g) return;
-  const root = normalizeCarModel(g, CAR.length);
   car.mesh.clear();
-  car.mesh.add(root);
-  const extracted = extractWheelsFromCar(root, CAR.length, CAR.width);
-  extractedHubs = extracted.wheelHubs;
-  carLoaded = true;
-  console.log('[wheels] extracted:',
-    extracted.wheels.map((m, i) => ({
-      verts: m ? m.geometry.attributes.position.count : 0,
-      hub: extracted.wheelHubs[i],
-    })));
+  car.mesh.add(normalizeCarModel(g, CAR.length));
+  // Re-attach wheels because mesh.clear() removed them.
   reAttachWheels();
 });
 
