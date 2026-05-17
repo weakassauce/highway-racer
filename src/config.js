@@ -51,10 +51,10 @@ export const TRAFFIC = {
 };
 
 export const CAMERA = {
-  chaseBack: 9,
-  chaseUp: 3.4,
-  chaseLookAhead: 6,
+  chaseBack: 8,
+  chaseUp: 3.0,
+  chaseLookAhead: 6,      // (used only on hood-view fallback now)
   lerp: 8,
-  fovBase: 70,
-  fovBoost: 90,           // FOV widens at top speed for sensation
+  fovBase: 65,
+  fovBoost: 88,           // FOV widens at top speed for sensation
 };

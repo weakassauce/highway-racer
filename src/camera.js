@@ -37,12 +37,10 @@ export class ChaseCamera {
       desired.addScaledVector(right, vLat * 0.06);
       this.pos.lerp(desired, 1 - Math.exp(-dt * CAMERA.lerp));
       this.cam.position.copy(this.pos);
-      // Look at a point slightly ahead of the car (or at the car when freely
-      // looking around so the focal point doesn't fly off-screen)
-      const lookActive = Math.abs(controls.lookYaw) > 0.05 || Math.abs(controls.lookPitch) > 0.05;
+      // Focus on the back of the car: look directly at the car's body, so the
+      // rear sits centered in frame instead of being flown past.
       this.target.copy(car.position);
-      this.target.y += 1.0;
-      if (!lookActive) this.target.addScaledVector(fwd, CAMERA.chaseLookAhead);
+      this.target.y += 1.1;
     } else {
       // Hood / first-person-ish
       this.pos.copy(car.position).addScaledVector(fwd, 0.5);
