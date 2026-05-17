@@ -37,7 +37,8 @@ export function normalizeCarModel(root, targetLength = 4.5) {
   if (window.carNoseFlip) rotY += Math.PI;
   root.rotation.y = rotY;
 
-  // 4. Lift so wheels touch the road (bottom of bbox = 0)
+  // 4. Lift so wheels touch the road (bottom of bbox = 0). Recompute the
+  //    bbox AFTER scaling so the lift uses the final size.
   box = new THREE.Box3().setFromObject(root);
   root.position.y -= box.min.y;
 

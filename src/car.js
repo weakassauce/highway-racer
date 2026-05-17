@@ -276,15 +276,41 @@ export class Car {
     if (this.crashed > 0) this.crashed -= dt;
   }
 
-  // Inelastic collision with another car: hard speed loss + small bounce.
-  collideWith(otherPos) {
-    const dir = new THREE.Vector3().subVectors(this.position, otherPos);
-    dir.y = 0;
-    if (dir.lengthSq() < 1e-4) dir.set((Math.random() - 0.5), 0, 1);
-    dir.normalize();
-    // Cut forward speed, push outward
-    this.velocity.multiplyScalar(0.25);
-    this.velocity.addScaledVector(dir, 8);
+  // Impulse-based collision response.
+  //   otherPos     – the colliding actor's world position
+  //   otherVel     – its velocity (defaults to 0 if static-ish)
+  //   otherMassRatio – 0..1 share of the impulse the other side absorbs
+  //                    (lower number = the other car moves less)
+  collideWith(otherPos, otherVel = null, otherMassRatio = 0.4) {
+    const n = new THREE.Vector3().subVectors(this.position, otherPos);
+    n.y = 0;
+    if (n.lengthSq() < 1e-4) n.set((Math.random() - 0.5), 0, 1);
+    n.normalize();
+
+    // Push the car out along the normal so we're not penetrating
+    const minSep = (CAR.length + CAR.width) * 0.45;
+    const sep = new THREE.Vector3().subVectors(this.position, otherPos);
+    const dist = Math.hypot(sep.x, sep.z) || 1;
+    const overlap = minSep - dist;
+    if (overlap > 0) {
+      this.position.x += n.x * overlap * (1 - otherMassRatio);
+      this.position.z += n.z * overlap * (1 - otherMassRatio);
+    }
+
+    // Relative velocity along the normal
+    const rel = otherVel
+      ? new THREE.Vector3().subVectors(this.velocity, otherVel)
+      : this.velocity.clone();
+    const velAlongNormal = rel.x * n.x + rel.z * n.z;
+    if (velAlongNormal < 0) {
+      const restitution = 0.25; // some energy lost on impact
+      const j = -(1 + restitution) * velAlongNormal;
+      // Player takes the larger share of the impulse
+      this.velocity.x += n.x * j * (1 - otherMassRatio);
+      this.velocity.z += n.z * j * (1 - otherMassRatio);
+    }
+    // Always bleed some forward speed on contact (rubber friction)
+    this.velocity.multiplyScalar(0.78);
     this.crashed = 0.35;
   }
 }

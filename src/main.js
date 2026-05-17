@@ -1,6 +1,6 @@
 import * as THREE from 'three';
 import { RoomEnvironment } from 'three/addons/environments/RoomEnvironment.js';
-import { CAMERA, WORLD, CAR } from './config.js';
+import { CAMERA, WORLD, CAR, centerlineX } from './config.js';
 import { Car, buildPlaceholderCar } from './car.js';
 import { World } from './world.js';
 import { TrafficManager } from './traffic.js';
@@ -148,18 +148,26 @@ function frame(now) {
 
   car.update(dt, controls);
 
-  // Keep player on the road (soft barrier inside the asphalt edge)
-  const halfRoad = (WORLD.laneWidth * WORLD.numLanes) / 2 - CAR.width / 2;
-  if (car.position.x > halfRoad) { car.position.x = halfRoad; car.velocity.x = 0; }
-  if (car.position.x < -halfRoad) { car.position.x = -halfRoad; car.velocity.x = 0; }
+  // Soft barriers that follow the curving centerline. Player can drift
+  // into the other carriageway (oncoming traffic!) but the outer edges
+  // are firm.
+  const cx = centerlineX(car.position.z);
+  const halfRoadOuter = WORLD.lanesPerSide * WORLD.laneWidth + WORLD.medianWidth / 2 - CAR.width / 2;
+  const xRel = car.position.x - cx;
+  if (xRel >  halfRoadOuter) { car.position.x = cx + halfRoadOuter; car.velocity.x = 0; }
+  if (xRel < -halfRoadOuter) { car.position.x = cx - halfRoadOuter; car.velocity.x = 0; }
 
-  // Traffic + collisions
+  // Traffic + collisions (impulse-based; both cars feel it)
   const hit = traffic.update(dt, car);
   if (hit) {
-    car.collideWith(hit.position);
-    // Push the traffic car aside too
+    // Traffic car velocity vector for relative impulse
+    const dir = hit.direction || 1;
+    const vTraffic = new THREE.Vector3(0, 0, -dir * hit.speed);
+    car.collideWith(hit.position, vTraffic, 0.35);
+    // Bump the traffic car aside (small kick)
     const away = new THREE.Vector3().subVectors(hit.position, car.position).normalize();
-    hit.position.addScaledVector(away, 1.5);
+    hit.position.addScaledVector(away, 1.0);
+    hit.speed = Math.max(8, hit.speed * 0.75); // they brake briefly too
   }
 
   world.update(car.position.z);
