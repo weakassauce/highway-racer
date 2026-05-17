@@ -68,15 +68,16 @@ export class Car {
   }
 
   // Build 4 wheel rigs. Each rig is two nested Groups: an outer "steer"
-  // pivot (rotation.y) and an inner "spin" pivot (rotation.x). This
-  // separation avoids Euler-order wobble — spinning never affects the
-  // steer axis and vice versa.
-  // If `template` (a GLB scene) is provided, it's cloned for each wheel
-  // and parented inside the spin pivot. Otherwise a procedural fallback
-  // is built from cylinders.
+  // pivot (rotation.y) and an inner "spin" pivot (rotation.x). Separating
+  // the rotations avoids Euler-order wobble.
+  // If `template` is provided, each rig clones it. Without a template we
+  // skip adding wheels at all — the body GLB has integrated wheels that
+  // look right (they just won't spin until a wheel asset is loaded).
   attachWheels(template = null) {
     for (const w of this.wheels) this.mesh.remove(w.steer);
     this.wheels = [];
+
+    if (!template) return;
 
     const positions = [
       // front-left, front-right, rear-left, rear-right
@@ -93,14 +94,9 @@ export class Car {
       const spin = new THREE.Group();
       steer.add(spin);
 
-      let wheelMesh;
-      if (template) {
-        wheelMesh = template.clone(true);
-        // Mirror left-side wheels so the rim face points outward on both sides
-        if (x < 0) wheelMesh.scale.x = -wheelMesh.scale.x;
-      } else {
-        wheelMesh = this._buildPlaceholderWheel();
-      }
+      const wheelMesh = template.clone(true);
+      // Mirror left-side wheels so the rim face points outward on both sides
+      if (x < 0) wheelMesh.scale.x = -wheelMesh.scale.x;
       spin.add(wheelMesh);
 
       this.mesh.add(steer);
