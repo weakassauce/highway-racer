@@ -67,7 +67,8 @@ export class Input {
     return {
       accel,
       brake,
-      steer: -steer,                // left key = negative heading (steer left)
+      // A / ← yields positive steer; physics convention now matches that
+      steer,
       boost: k.has('ShiftLeft') || k.has('ShiftRight'),
       handbrake: k.has('Space'),
       lookYaw: this.lookYaw,

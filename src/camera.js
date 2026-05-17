@@ -21,8 +21,9 @@ export class ChaseCamera {
     const right = car.right(this._tmpRight);
 
     if (this.view === 'chase') {
-      // Base orbit angle = behind car (car.heading + π) + look-yaw offset.
-      const orbitYaw = car.heading + Math.PI + controls.lookYaw;
+      // Base orbit places the camera behind the car: car forward is -Z, so
+      // a +Z offset (sin/cos of car.heading) is the rear of the car.
+      const orbitYaw = car.heading + controls.lookYaw;
       const cosY = Math.cos(orbitYaw), sinY = Math.sin(orbitYaw);
       const cosP = Math.cos(controls.lookPitch), sinP = Math.sin(controls.lookPitch);
       // Spherical-ish offset around the car

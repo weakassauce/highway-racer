@@ -27,11 +27,12 @@ export const CAR = {
   topSpeed: 110,          // m/s (~395 km/h)
   boostMul: 1.45,         // shift multiplier on throttle
   // Steering — yaw rate uses a hyperbolic falloff so steering gets
-  // noticeably worse the faster you go.
+  // noticeably worse the faster you go. Lower yawHalfSpeed means the
+  // curve is steeper: much more authority at low speed, gentler at high.
   maxSteer: 0.55,         // radians, smoothed input target
   steerLerp: 7,           // how fast steer angle eases toward input
-  yawAtRest: 60,          // numerator of yaw curve (rad/s scale)
-  yawHalfSpeed: 50,       // at this speed, yaw authority is half of zero-speed value
+  yawAtRest: 70,          // numerator of yaw curve (rad/s scale)
+  yawHalfSpeed: 30,       // at this speed, yaw authority halves from zero-speed value
   // Grip / drift
   lateralGrip: 6.5,       // how aggressively sideways speed bleeds off
   handbrakeGripMul: 0.18, // grip multiplier while handbrake held
