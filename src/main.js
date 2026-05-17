@@ -1,4 +1,5 @@
 import * as THREE from 'three';
+import { RoomEnvironment } from 'three/addons/environments/RoomEnvironment.js';
 import { CAMERA, WORLD, CAR } from './config.js';
 import { Car, buildPlaceholderCar } from './car.js';
 import { World } from './world.js';
@@ -13,9 +14,18 @@ const renderer = new THREE.WebGLRenderer({ antialias: true, powerPreference: 'hi
 renderer.setPixelRatio(Math.min(window.devicePixelRatio, 2));
 renderer.setSize(window.innerWidth, window.innerHeight);
 renderer.toneMapping = THREE.ACESFilmicToneMapping;
+renderer.toneMappingExposure = 1.1;
+renderer.outputColorSpace = THREE.SRGBColorSpace;
 app.appendChild(renderer.domElement);
 
 const scene = new THREE.Scene();
+
+// Image-based lighting: gives the car body real reflections (sky/floor/walls
+// of a procedural studio room blurred into an envmap), which is what makes
+// painted panels look glossy instead of plasticky.
+const pmrem = new THREE.PMREMGenerator(renderer);
+scene.environment = pmrem.fromScene(new RoomEnvironment(), 0.04).texture;
+
 const camera = new THREE.PerspectiveCamera(CAMERA.fovBase, window.innerWidth / window.innerHeight, 0.5, 4000);
 window.addEventListener('resize', () => {
   renderer.setSize(window.innerWidth, window.innerHeight);

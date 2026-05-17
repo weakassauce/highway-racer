@@ -13,7 +13,7 @@ export async function tryLoadGLB(url) {
 }
 
 // Normalize a generated car GLB: center, scale to a target length, rotate so
-// nose faces -Z, no shadows on the car itself for perf.
+// nose faces -Z, polish the materials so painted panels look glossy.
 export function normalizeCarModel(root, targetLength = 4.5) {
   const box = new THREE.Box3().setFromObject(root);
   const size = box.getSize(new THREE.Vector3());
@@ -23,7 +23,26 @@ export function normalizeCarModel(root, targetLength = 4.5) {
   if (longest > 0) root.scale.setScalar(targetLength / longest);
   // TRELLIS GLBs face +Z by default; flip 180° so nose points -Z
   root.rotation.y = Math.PI;
-  root.traverse((o) => { if (o.isMesh) { o.castShadow = false; o.receiveShadow = false; } });
+
+  root.traverse((o) => {
+    if (!o.isMesh) return;
+    o.castShadow = false;
+    o.receiveShadow = false;
+    const mats = Array.isArray(o.material) ? o.material : [o.material];
+    for (const m of mats) {
+      if (!m) continue;
+      // Polish: low roughness for clearcoat shine, lift metalness so the
+      // env-map reflections actually show up, and turn up envMapIntensity.
+      if ('roughness' in m) m.roughness = Math.min(0.22, m.roughness ?? 0.4);
+      if ('metalness' in m) m.metalness = Math.max(0.55, m.metalness ?? 0);
+      if ('envMapIntensity' in m) m.envMapIntensity = 1.6;
+      m.needsUpdate = true;
+    }
+    // Smooth-shaded triangles look glossier than flat ones.
+    if (o.geometry && o.geometry.attributes && !o.geometry.attributes.normal) {
+      o.geometry.computeVertexNormals();
+    }
+  });
   return root;
 }
 
