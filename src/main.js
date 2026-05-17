@@ -75,8 +75,11 @@ tryLoadGLB('/assets/player_car.glb').then((g) => {
   const extracted = extractWheelsFromCar(root, CAR.length, CAR.width);
   extractedHubs = extracted.wheelHubs;
   carLoaded = true;
-  console.log('[wheels] extracted vertex counts:',
-    extracted.wheels.map((m) => m ? m.geometry.attributes.position.count : 0));
+  console.log('[wheels] extracted:',
+    extracted.wheels.map((m, i) => ({
+      verts: m ? m.geometry.attributes.position.count : 0,
+      hub: extracted.wheelHubs[i],
+    })));
   reAttachWheels();
 });
 

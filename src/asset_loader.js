@@ -89,115 +89,165 @@ export function normalizeWheelModel(root, targetDiameter = 0.8) {
   return root;
 }
 
-// Find the wheels inside a car GLB and cut them out. Triangles whose
-// centroid sits inside one of four "wheel zones" (vertical cylinders at
-// the expected wheel positions, near the floor) are pulled into separate
-// BufferGeometries with their positions re-centered on the wheel hub.
-// The originals are simultaneously dropped from the body's index so the
-// surface no longer renders those triangles. Returns
-//   { wheels: [FL, FR, RL, RR] meshes (or null), wheelPositions: [..] }
-// so the caller can parent each into a spin/steer pivot.
+// Find the wheels inside a car GLB and cut them out.
+// Strategy: gather every triangle whose centroid sits in the lower half of
+// the car, then run k-means (k=4) on their XZ positions to discover the
+// 4 actual wheel hub locations (instead of guessing). Any low triangle
+// within a generous radius of its cluster center is reclassified as
+// part of that wheel, pulled into its own BufferGeometry (recentred on
+// the cluster centroid), and removed from the body's index.
+// Front pair = the two clusters with smaller Z (Z is car length, -Z forward).
+// Returns { wheels: [FL,FR,RL,RR] (some may be null), wheelHubs: [...] }
 export function extractWheelsFromCar(root, carLength, carWidth) {
-  // Expected wheel hubs in car-local space (Z is car length axis).
-  const LATERAL = 0.40;       // fraction of half-width
-  const LONGITUDINAL = 0.32;  // fraction of length from center
-  const ZONE_RADIUS = Math.max(0.45, carLength * 0.13); // cylindrical zone
-  const ZONE_Y_MAX = 0.95;    // ignore high triangles (canopy roof etc.)
+  root.updateMatrixWorld(true);
 
-  const wheelHubs = [
-    { x: -carWidth * LATERAL, y: 0,  z: -carLength * LONGITUDINAL, isFront: true  },
-    { x:  carWidth * LATERAL, y: 0,  z: -carLength * LONGITUDINAL, isFront: true  },
-    { x: -carWidth * LATERAL, y: 0,  z:  carLength * LONGITUDINAL, isFront: false },
-    { x:  carWidth * LATERAL, y: 0,  z:  carLength * LONGITUDINAL, isFront: false },
+  // Pass 1: enumerate every triangle, record its centroid + a back-ref.
+  const tris = []; // { centroid: {x,y,z}, mesh, i0,i1,i2 }
+  const meshList = [];
+  root.traverse((mesh) => {
+    if (!mesh.isMesh || !mesh.geometry || !mesh.geometry.index) return;
+    meshList.push(mesh);
+    const geo = mesh.geometry;
+    const pos = geo.attributes.position;
+    const idx = geo.index.array;
+    const meshToRoot = mesh.matrixWorld.clone();
+    meshToRoot.premultiply(new THREE.Matrix4().copy(root.matrixWorld).invert());
+    const v0 = new THREE.Vector3(), v1 = new THREE.Vector3(), v2 = new THREE.Vector3();
+    for (let t = 0; t < idx.length; t += 3) {
+      const i0 = idx[t], i1 = idx[t + 1], i2 = idx[t + 2];
+      v0.fromBufferAttribute(pos, i0).applyMatrix4(meshToRoot);
+      v1.fromBufferAttribute(pos, i1).applyMatrix4(meshToRoot);
+      v2.fromBufferAttribute(pos, i2).applyMatrix4(meshToRoot);
+      tris.push({
+        cx: (v0.x + v1.x + v2.x) / 3,
+        cy: (v0.y + v1.y + v2.y) / 3,
+        cz: (v0.z + v1.z + v2.z) / 3,
+        mesh, t,
+      });
+    }
+  });
+  if (tris.length === 0) return { wheels: [null, null, null, null], wheelHubs: [] };
+
+  // Find the car's overall Y extent to set a "low half" threshold for wheels
+  let minY = Infinity, maxY = -Infinity;
+  for (const t of tris) { if (t.cy < minY) minY = t.cy; if (t.cy > maxY) maxY = t.cy; }
+  const yThresh = minY + (maxY - minY) * 0.55; // bottom 55% of car
+
+  const lowTris = tris.filter((t) => t.cy <= yThresh);
+  if (lowTris.length === 0) return { wheels: [null, null, null, null], wheelHubs: [] };
+
+  // K-means with 4 clusters seeded at the corners of the car footprint.
+  const seedX = carWidth * 0.38, seedZ = carLength * 0.32;
+  let centers = [
+    { x: -seedX, z: -seedZ }, { x:  seedX, z: -seedZ },
+    { x: -seedX, z:  seedZ }, { x:  seedX, z:  seedZ },
   ];
+  for (let iter = 0; iter < 14; iter++) {
+    const sums = [
+      { x: 0, z: 0, n: 0 }, { x: 0, z: 0, n: 0 },
+      { x: 0, z: 0, n: 0 }, { x: 0, z: 0, n: 0 },
+    ];
+    for (const t of lowTris) {
+      let best = 0, bestD = Infinity;
+      for (let c = 0; c < 4; c++) {
+        const dx = t.cx - centers[c].x, dz = t.cz - centers[c].z;
+        const d = dx * dx + dz * dz;
+        if (d < bestD) { bestD = d; best = c; }
+      }
+      sums[best].x += t.cx; sums[best].z += t.cz; sums[best].n += 1;
+    }
+    let moved = 0;
+    centers = centers.map((c, i) => {
+      if (sums[i].n === 0) return c;
+      const nx = sums[i].x / sums[i].n, nz = sums[i].z / sums[i].n;
+      moved = Math.max(moved, Math.abs(nx - c.x), Math.abs(nz - c.z));
+      return { x: nx, z: nz };
+    });
+    if (moved < 0.003) break;
+  }
 
+  // Order: front pair (smaller Z) before rear pair; within a pair, left first.
+  centers.sort((a, b) => a.z - b.z); // front (smaller Z) first
+  const front = centers.slice(0, 2).sort((a, b) => a.x - b.x); // L (smaller X), R
+  const rear  = centers.slice(2, 4).sort((a, b) => a.x - b.x);
+  const orderedCenters = [...front, ...rear];
+
+  // Build buckets, seeded at the cluster centers; pull triangles within a
+  // generous radius of their assigned center.
+  // Pick a radius based on inter-cluster distance: half the front lateral gap.
+  const frontGap = Math.abs(front[1].x - front[0].x);
+  const sideGap  = Math.abs(rear[0].z - front[0].z);
+  const ZONE_R = Math.min(0.95, Math.max(0.45, Math.min(frontGap, sideGap) * 0.42));
+
+  const wheelHubs = orderedCenters.map((c, i) => ({
+    x: c.x, y: 0, z: c.z, isFront: i < 2,
+  }));
   const buckets = wheelHubs.map(() => ({
     positions: [], normals: [], uvs: [], indices: [],
     vertexMap: new Map(), nextIdx: 0, material: null,
+    perMeshKeep: new Map(), // mesh → array of triangle index-triples to keep
   }));
 
-  const v0 = new THREE.Vector3();
-  const v1 = new THREE.Vector3();
-  const v2 = new THREE.Vector3();
-  const centroid = new THREE.Vector3();
-
-  root.updateMatrixWorld(true);
-
-  root.traverse((mesh) => {
-    if (!mesh.isMesh) return;
+  // Walk every mesh again, this time actually doing the extraction.
+  for (const mesh of meshList) {
     const geo = mesh.geometry;
     const pos = geo.attributes.position;
     const norm = geo.attributes.normal;
     const uv = geo.attributes.uv;
-    if (!geo.index) return;
-    const indexArr = geo.index.array;
-
-    // We work in root-local space. Each vertex needs the mesh-to-root
-    // transform applied to get its position inside the car. (For most
-    // TRELLIS exports the chain is identity, but we don't assume that.)
+    const idx = geo.index.array;
     const meshToRoot = mesh.matrixWorld.clone();
     meshToRoot.premultiply(new THREE.Matrix4().copy(root.matrixWorld).invert());
 
-    const keepIndices = [];
-    for (let t = 0; t < indexArr.length; t += 3) {
-      const i0 = indexArr[t], i1 = indexArr[t + 1], i2 = indexArr[t + 2];
+    const keep = [];
+    const v0 = new THREE.Vector3(), v1 = new THREE.Vector3(), v2 = new THREE.Vector3();
+    for (let t = 0; t < idx.length; t += 3) {
+      const i0 = idx[t], i1 = idx[t + 1], i2 = idx[t + 2];
       v0.fromBufferAttribute(pos, i0).applyMatrix4(meshToRoot);
       v1.fromBufferAttribute(pos, i1).applyMatrix4(meshToRoot);
       v2.fromBufferAttribute(pos, i2).applyMatrix4(meshToRoot);
-      centroid.copy(v0).add(v1).add(v2).divideScalar(3);
-
+      const cy = (v0.y + v1.y + v2.y) / 3;
       let claimed = -1;
-      if (centroid.y < ZONE_Y_MAX) {
-        for (let w = 0; w < wheelHubs.length; w++) {
-          const dx = centroid.x - wheelHubs[w].x;
-          const dz = centroid.z - wheelHubs[w].z;
-          if (dx * dx + dz * dz < ZONE_RADIUS * ZONE_RADIUS) {
-            claimed = w;
-            break;
-          }
+      if (cy <= yThresh) {
+        const cx = (v0.x + v1.x + v2.x) / 3;
+        const cz = (v0.z + v1.z + v2.z) / 3;
+        let bestD = ZONE_R * ZONE_R;
+        for (let c = 0; c < 4; c++) {
+          const dx = cx - wheelHubs[c].x, dz = cz - wheelHubs[c].z;
+          const d = dx * dx + dz * dz;
+          if (d < bestD) { bestD = d; claimed = c; }
         }
       }
-
       if (claimed < 0) {
-        keepIndices.push(i0, i1, i2);
-      } else {
-        const b = buckets[claimed];
-        if (!b.material) b.material = mesh.material;
-        const hub = wheelHubs[claimed];
-        for (const ovi of [i0, i1, i2]) {
-          let nv = b.vertexMap.get(ovi);
-          if (nv === undefined) {
-            nv = b.nextIdx++;
-            b.vertexMap.set(ovi, nv);
-            // Re-center vertex on the wheel hub so it rotates around (0,0,0)
-            // of the spin pivot. We use the *mesh-local* position, then
-            // shift by the hub offset in root space.
-            const wp0 = new THREE.Vector3().fromBufferAttribute(pos, ovi).applyMatrix4(meshToRoot);
-            b.positions.push(wp0.x - hub.x, wp0.y - hub.y, wp0.z - hub.z);
-            if (norm) b.normals.push(norm.getX(ovi), norm.getY(ovi), norm.getZ(ovi));
-            if (uv)   b.uvs.push(uv.getX(ovi), uv.getY(ovi));
-          }
-          b.indices.push(nv);
+        keep.push(i0, i1, i2);
+        continue;
+      }
+      const b = buckets[claimed];
+      if (!b.material) b.material = mesh.material;
+      const hub = wheelHubs[claimed];
+      for (const ovi of [i0, i1, i2]) {
+        let nv = b.vertexMap.get(ovi);
+        if (nv === undefined) {
+          nv = b.nextIdx++;
+          b.vertexMap.set(ovi, nv);
+          const wp = new THREE.Vector3().fromBufferAttribute(pos, ovi).applyMatrix4(meshToRoot);
+          b.positions.push(wp.x - hub.x, wp.y - hub.y, wp.z - hub.z);
+          if (norm) b.normals.push(norm.getX(ovi), norm.getY(ovi), norm.getZ(ovi));
+          if (uv)   b.uvs.push(uv.getX(ovi), uv.getY(ovi));
         }
+        b.indices.push(nv);
       }
     }
+    if (keep.length !== idx.length) geo.setIndex(keep);
+  }
 
-    if (keepIndices.length !== indexArr.length) {
-      geo.setIndex(keepIndices);
-    }
-  });
-
-  // For each bucket, recenter the extracted geometry on its actual centroid
-  // (rather than the seeded hub) so the spin pivot truly is the wheel center.
-  // Push the centroid offset back into the wheelHubs entry so the caller can
-  // place the rig at the right spot in car-local space.
+  // Recenter on actual centroid so spin axis is the true wheel center.
   for (let w = 0; w < buckets.length; w++) {
     const b = buckets[w];
     if (b.positions.length === 0) continue;
     let cx = 0, cy = 0, cz = 0;
     const n = b.positions.length / 3;
     for (let i = 0; i < b.positions.length; i += 3) {
-      cx += b.positions[i];     cy += b.positions[i + 1]; cz += b.positions[i + 2];
+      cx += b.positions[i]; cy += b.positions[i + 1]; cz += b.positions[i + 2];
     }
     cx /= n; cy /= n; cz /= n;
     for (let i = 0; i < b.positions.length; i += 3) {
@@ -216,8 +266,7 @@ export function extractWheelsFromCar(root, carLength, carWidth) {
     if (b.uvs.length)     g.setAttribute('uv',     new THREE.Float32BufferAttribute(b.uvs, 2));
     g.setIndex(b.indices);
     if (!b.normals.length) g.computeVertexNormals();
-    const mat = b.material || new THREE.MeshStandardMaterial({ color: 0x222222 });
-    const m = new THREE.Mesh(g, mat);
+    const m = new THREE.Mesh(g, b.material || new THREE.MeshStandardMaterial({ color: 0x222222 }));
     m.castShadow = false;
     m.receiveShadow = false;
     return m;
