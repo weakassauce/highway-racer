@@ -40,41 +40,67 @@ const carMesh = buildPlaceholderCar();
 scene.add(carMesh);
 const car = new Car(carMesh);
 
-// New flow: the player_car GLB is generated wheel-less, so we don't try to
-// extract anything from it. Wheels are 4 clones of wheel.glb placed at
-// canonical hub positions derived from CAR dimensions.
+// Player_car GLB is generated wheel-less, so we just place wheel.glb clones
+// at the wheel arch positions of the actual loaded body (measured after
+// normalize, not the placeholder dimensions).
 let wheelTemplate = null;
+let wheelTemplateGLB = null; // raw GLB scene before normalize, so we can resize later
 
-const STANDARD_HUBS = [
-  { x: -CAR.width * 0.40, y: 0.40, z: -CAR.length * 0.32, isFront: true  },
-  { x:  CAR.width * 0.40, y: 0.40, z: -CAR.length * 0.32, isFront: true  },
-  { x: -CAR.width * 0.40, y: 0.40, z:  CAR.length * 0.32, isFront: false },
-  { x:  CAR.width * 0.40, y: 0.40, z:  CAR.length * 0.32, isFront: false },
-];
+// All tunable from devtools as `wheelTune.<field>` + `applyWheels()`.
+// Defaults sized for a Porsche 911 GT3 RS body proportion.
+const wheelTune = {
+  lateral: 0.46,       // hub x = ±lateral × bbox.x      (width fraction from center)
+  longitudinal: 0.30,  // hub z = ±longitudinal × bbox.z (length fraction from center)
+  diameter: 0.78,      // wheel.glb sized to this stud diameter
+  yLift: 0.05,         // raise hubs above tire-touches-ground by this much
+};
+let carBBox = null;
+
+window.wheelTune = wheelTune;
+window.applyWheels = () => reAttachWheels();
 
 function reAttachWheels() {
-  const meshes = STANDARD_HUBS.map((hub) => {
+  if (!carBBox) return;
+  if (wheelTemplateGLB) {
+    // Re-normalize the wheel each time so live diameter changes take effect.
+    wheelTemplate = normalizeWheelModel(wheelTemplateGLB.clone(true), wheelTune.diameter);
+  }
+  const fullX = carBBox.max.x - carBBox.min.x;
+  const fullZ = carBBox.max.z - carBBox.min.z;
+  const r = wheelTune.diameter / 2;
+  // lateral / longitudinal are fractions of the FULL body extent, applied
+  // symmetrically about origin (the body was centered on x=0, z=0).
+  const dx = fullX * wheelTune.lateral;
+  const dz = fullZ * wheelTune.longitudinal;
+  const hubs = [
+    { x: -dx, y: r + wheelTune.yLift, z: -dz, isFront: true  }, // FL
+    { x:  dx, y: r + wheelTune.yLift, z: -dz, isFront: true  }, // FR
+    { x: -dx, y: r + wheelTune.yLift, z:  dz, isFront: false }, // RL
+    { x:  dx, y: r + wheelTune.yLift, z:  dz, isFront: false }, // RR
+  ];
+  const meshes = hubs.map((hub) => {
     if (!wheelTemplate) return null;
     const clone = wheelTemplate.clone(true);
     if (hub.x < 0) clone.scale.x = -clone.scale.x;
     return clone;
   });
-  car.attachWheels({ wheels: meshes, wheelHubs: STANDARD_HUBS });
+  car.attachWheels({ wheels: meshes, wheelHubs: hubs });
+  console.log('[wheels] body extent', { x: fullX.toFixed(2), z: fullZ.toFixed(2) }, 'hubs:', hubs);
 }
-// Attach immediately so the placeholder car has visible alloy fallbacks
-reAttachWheels();
 
 tryLoadGLB('/assets/wheel.glb').then((g) => {
   if (!g) return;
-  wheelTemplate = normalizeWheelModel(g, 0.8);
+  wheelTemplateGLB = g;
   reAttachWheels();
 });
 
 tryLoadGLB('/assets/player_car.glb').then((g) => {
   if (!g) return;
   car.mesh.clear();
-  car.mesh.add(normalizeCarModel(g, CAR.length));
-  // Re-attach wheels because mesh.clear() removed them.
+  const root = normalizeCarModel(g, CAR.length);
+  car.mesh.add(root);
+  // Measure body to size wheel placement to its real extent
+  carBBox = new THREE.Box3().setFromObject(root);
   reAttachWheels();
 });
 
