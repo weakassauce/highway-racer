@@ -262,10 +262,11 @@ export class Car {
     this.mesh.position.copy(this.position);
     this.mesh.rotation.set(0, this.heading, 0);
 
-    // Spin wheels (inner pivot, rotation.x) at vLong / radius. Steer
-    // front wheels (outer pivot, rotation.y) by the smoothed input.
+    // Spin wheels (inner pivot, rotation.x) at vLong / radius. Negative so
+    // a forward-moving car (+vLong) makes the wheel's top move forward (-Z),
+    // i.e. roll the way you'd expect. Steer front wheels via outer pivot.
     if (this.wheels.length > 0) {
-      this.wheelAngle += (vLong / WHEEL_RADIUS) * dt;
+      this.wheelAngle -= (vLong / WHEEL_RADIUS) * dt;
       for (const w of this.wheels) {
         w.spin.rotation.x = this.wheelAngle;
         w.steer.rotation.y = w.isFront ? this.steer : 0;
