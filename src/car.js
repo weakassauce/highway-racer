@@ -70,35 +70,51 @@ export class Car {
   // Build 4 wheel rigs. Each rig is two nested Groups: outer "steer"
   // pivot (rotation.y) + inner "spin" pivot (rotation.x). Avoids
   // Euler-order wobble.
-  // Without a `template`, build a multi-spoke alloy wheel procedurally —
-  // these are detailed enough to look right and they occlude the GLB's
-  // baked-in static wheels.
-  attachWheels(template = null) {
+  //
+  // wheelMeshes:
+  //   null / undefined  → procedural alloy fallback at the default hubs
+  //   array of 4 meshes → use each at its given hub (extracted from the GLB)
+  //   object { wheels:[4 meshes], wheelHubs:[4 {x,y,z,isFront}] }
+  //                     → same but with custom hub positions per wheel
+  attachWheels(arg = null) {
     for (const w of this.wheels) this.mesh.remove(w.steer);
     this.wheels = [];
 
-    const positions = [
-      // front-left, front-right, rear-left, rear-right
-      [-CAR.width / 2 * WHEEL_LATERAL, -CAR.length * WHEEL_LONGITUDINAL, true],
-      [ CAR.width / 2 * WHEEL_LATERAL, -CAR.length * WHEEL_LONGITUDINAL, true],
-      [-CAR.width / 2 * WHEEL_LATERAL,  CAR.length * WHEEL_LONGITUDINAL, false],
-      [ CAR.width / 2 * WHEEL_LATERAL,  CAR.length * WHEEL_LONGITUDINAL, false],
-    ];
+    let meshes = null;
+    let hubs = null;
+    if (arg && arg.wheels && arg.wheelHubs) {
+      meshes = arg.wheels;
+      hubs = arg.wheelHubs;
+    } else if (Array.isArray(arg)) {
+      meshes = arg;
+    }
 
-    for (let i = 0; i < positions.length; i++) {
-      const [x, z, isFront] = positions[i];
+    const defaultHubs = [
+      { x: -CAR.width / 2 * WHEEL_LATERAL, y: WHEEL_RADIUS, z: -CAR.length * WHEEL_LONGITUDINAL, isFront: true  },
+      { x:  CAR.width / 2 * WHEEL_LATERAL, y: WHEEL_RADIUS, z: -CAR.length * WHEEL_LONGITUDINAL, isFront: true  },
+      { x: -CAR.width / 2 * WHEEL_LATERAL, y: WHEEL_RADIUS, z:  CAR.length * WHEEL_LONGITUDINAL, isFront: false },
+      { x:  CAR.width / 2 * WHEEL_LATERAL, y: WHEEL_RADIUS, z:  CAR.length * WHEEL_LONGITUDINAL, isFront: false },
+    ];
+    const effectiveHubs = hubs || defaultHubs;
+
+    for (let i = 0; i < 4; i++) {
+      const h = effectiveHubs[i];
       const steer = new THREE.Group();
-      steer.position.set(x, WHEEL_RADIUS, z);
+      steer.position.set(h.x, h.y, h.z);
       const spin = new THREE.Group();
       steer.add(spin);
 
-      const wheelMesh = template ? template.clone(true) : this._buildAlloyWheel();
-      // Mirror left-side wheels so the rim face points outward on both sides
-      if (x < 0) wheelMesh.scale.x = -wheelMesh.scale.x;
+      let wheelMesh;
+      if (meshes && meshes[i]) {
+        wheelMesh = meshes[i];
+      } else {
+        wheelMesh = this._buildAlloyWheel();
+        if (h.x < 0) wheelMesh.scale.x = -wheelMesh.scale.x;
+      }
       spin.add(wheelMesh);
 
       this.mesh.add(steer);
-      this.wheels.push({ steer, spin, isFront });
+      this.wheels.push({ steer, spin, isFront: h.isFront });
     }
   }
 
