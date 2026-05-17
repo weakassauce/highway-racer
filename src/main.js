@@ -84,9 +84,10 @@ function reAttachWheels() {
   const meshes = hubs.map((hub) => {
     if (!wheelTemplate) return null;
     const clone = wheelTemplate.clone(true);
-    // Mirror right-side wheels so the rim face points outward on both sides.
-    // (The normalized template's rim faces -X; right wheels (x > 0) need +X.)
-    if (hub.x > 0) clone.scale.x = -clone.scale.x;
+    // Flip left-side wheels 180° around Y so their rim faces -X (outward).
+    // Using rotation instead of scale avoids the negative-X mirror flipping
+    // triangle winding (which made the rim's front faces backface-cull).
+    if (hub.x < 0) clone.rotation.y += Math.PI;
     return clone;
   });
   car.attachWheels({ wheels: meshes, wheelHubs: hubs });
