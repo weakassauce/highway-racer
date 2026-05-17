@@ -187,6 +187,27 @@ export function extractWheelsFromCar(root, carLength, carWidth) {
     }
   });
 
+  // For each bucket, recenter the extracted geometry on its actual centroid
+  // (rather than the seeded hub) so the spin pivot truly is the wheel center.
+  // Push the centroid offset back into the wheelHubs entry so the caller can
+  // place the rig at the right spot in car-local space.
+  for (let w = 0; w < buckets.length; w++) {
+    const b = buckets[w];
+    if (b.positions.length === 0) continue;
+    let cx = 0, cy = 0, cz = 0;
+    const n = b.positions.length / 3;
+    for (let i = 0; i < b.positions.length; i += 3) {
+      cx += b.positions[i];     cy += b.positions[i + 1]; cz += b.positions[i + 2];
+    }
+    cx /= n; cy /= n; cz /= n;
+    for (let i = 0; i < b.positions.length; i += 3) {
+      b.positions[i] -= cx; b.positions[i + 1] -= cy; b.positions[i + 2] -= cz;
+    }
+    wheelHubs[w].x += cx;
+    wheelHubs[w].y += cy;
+    wheelHubs[w].z += cz;
+  }
+
   const wheelMeshes = buckets.map((b) => {
     if (b.positions.length === 0) return null;
     const g = new THREE.BufferGeometry();

@@ -5,3 +5,8 @@ dist
 *.log
 .env
 .env.*
+
+# Auto-generated AssetForge wheels GLB is too large for a stable git push
+# (~18 MB caused HTTP 408 timeouts). Kept local-only; can be regenerated
+# from AssetForge or copied from ~/Downloads/projects/AssetForge/output/.
+public/assets/wheel.glb

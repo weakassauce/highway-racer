@@ -7,7 +7,7 @@ import { TrafficManager } from './traffic.js';
 import { ChaseCamera } from './camera.js';
 import { Input } from './input.js';
 import { HUD } from './hud.js';
-import { tryLoadGLB, normalizeCarModel } from './asset_loader.js';
+import { tryLoadGLB, normalizeCarModel, normalizeWheelModel, extractWheelsFromCar } from './asset_loader.js';
 
 const app = document.getElementById('app');
 const renderer = new THREE.WebGLRenderer({ antialias: true, powerPreference: 'high-performance' });
@@ -40,13 +40,44 @@ const carMesh = buildPlaceholderCar();
 scene.add(carMesh);
 const car = new Car(carMesh);
 
-// No wheel rigs — just load the player_car.glb and let the body render
-// with whatever wheels it has baked in. (Wheel extraction / procedural
-// alloys both removed.)
+// Wheel rig: when player_car.glb arrives, extract its baked-in wheels (cuts
+// the wheel triangles out of the body), then replace each with a clone of
+// the AssetForge wheel.glb at the extracted hub position. The result is
+// proper spinning wheels at the correct spots.
+let wheelTemplate = null;
+let extractedHubs = null;
+let carLoaded = false;
+
+function reAttachWheels() {
+  if (!carLoaded || !extractedHubs) return;
+  const meshes = extractedHubs.map((hub) => {
+    if (wheelTemplate) {
+      const clone = wheelTemplate.clone(true);
+      if (hub.x < 0) clone.scale.x = -clone.scale.x;
+      return clone;
+    }
+    return null; // fall back to procedural alloy
+  });
+  car.attachWheels({ wheels: meshes, wheelHubs: extractedHubs });
+}
+
+tryLoadGLB('/assets/wheel.glb').then((g) => {
+  if (!g) return;
+  wheelTemplate = normalizeWheelModel(g, 0.8);
+  reAttachWheels();
+});
+
 tryLoadGLB('/assets/player_car.glb').then((g) => {
   if (!g) return;
+  const root = normalizeCarModel(g, CAR.length);
   car.mesh.clear();
-  car.mesh.add(normalizeCarModel(g, CAR.length));
+  car.mesh.add(root);
+  const extracted = extractWheelsFromCar(root, CAR.length, CAR.width);
+  extractedHubs = extracted.wheelHubs;
+  carLoaded = true;
+  console.log('[wheels] extracted vertex counts:',
+    extracted.wheels.map((m) => m ? m.geometry.attributes.position.count : 0));
+  reAttachWheels();
 });
 
 // Traffic
