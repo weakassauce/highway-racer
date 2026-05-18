@@ -9,12 +9,12 @@ export const WORLD = {
   visibleSegments: 16,
   segmentCurveSamples: 12, // sub-quads per segment along the curve
   groundColor: 0x35402b,
-  // Multi-stop sky gradient (top → mid → low → horizon)
-  skyTop: 0x4a96ec,
-  skyMid: 0x8ec5f0,
-  skyLow: 0xc9def0,
-  skyHorizon: 0xf3e5cc,
-  fogColor: 0xcfd9e0,
+  // Multi-stop sky gradient (top → mid → low → horizon) — pale daytime sky
+  skyTop: 0x8fb9eb,
+  skyMid: 0xbcd6f1,
+  skyLow: 0xdfeaf6,
+  skyHorizon: 0xfbf3e0,
+  fogColor: 0xe2e8ee,
   fogNear: 120,
   fogFar: 1500,
   cityBlockOffsetX: 55,   // distance from road centerline to first building row
