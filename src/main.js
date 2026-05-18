@@ -127,10 +127,12 @@ function trySetTrafficWheel() {
 // came out opposite of the others.
 const TRAFFIC_VARIANTS = [
   // length / wheelLat / wheelLong fractions of bbox; wheelRadius in meters.
-  // Lateral fractions tightened a touch so wheels don't poke through fenders.
-  { url: '/assets/traffic_ram.glb',     length: 6.8, wheelLat: 0.33, wheelLong: 0.30, wheelRadius: 0.46, extraRotY: 0 },
-  { url: '/assets/traffic_tesla.glb',   length: 5.0, wheelLat: 0.34, wheelLong: 0.30, wheelRadius: 0.34, extraRotY: 0 },
-  { url: '/assets/traffic_mustang.glb', length: 4.7, wheelLat: 0.34, wheelLong: 0.32, wheelRadius: 0.34, extraRotY: Math.PI },
+  // Lateral pulled in significantly — bbox includes mirrors/fenders so the
+  // actual axle position is well inside the body envelope.
+  // extraLift jacks the truck up off the road like a lifted truck would be.
+  { url: '/assets/traffic_ram.glb',     length: 6.8, wheelLat: 0.28, wheelLong: 0.30, wheelRadius: 0.46, extraRotY: 0,       extraLift: 0.45 },
+  { url: '/assets/traffic_tesla.glb',   length: 5.0, wheelLat: 0.30, wheelLong: 0.30, wheelRadius: 0.34, extraRotY: 0,       extraLift: 0    },
+  { url: '/assets/traffic_mustang.glb', length: 4.7, wheelLat: 0.30, wheelLong: 0.32, wheelRadius: 0.34, extraRotY: Math.PI, extraLift: 0    },
 ];
 
 const trafficTemplates = [];
@@ -138,11 +140,13 @@ function pushTrafficTemplate(g, variant) {
   if (!g) return;
   const root = normalizeCarModel(g, variant.length);
   if (variant.extraRotY) root.rotation.y += variant.extraRotY;
+  if (variant.extraLift) root.position.y += variant.extraLift;
   trafficTemplates.push({
     root,
     wheelLat: variant.wheelLat,
     wheelLong: variant.wheelLong,
     wheelRadius: variant.wheelRadius,
+    extraLift: variant.extraLift || 0,
   });
   traffic.setTemplates(trafficTemplates);
   trySetTrafficWheel();

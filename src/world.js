@@ -290,9 +290,13 @@ export class World {
         if (templates.length > 0 && Math.random() < 0.85) {
           const tpl = templates[Math.floor(Math.random() * templates.length)];
           const inst = tpl.root.clone(true);
-          // Slight random scale variation around the template's natural size
+          // The cloned template ALREADY has scale=target_height/source_height
+          // applied by normalizeBuildingModel. Multiply (don't overwrite!)
+          // by a per-instance jitter so each clone is a slightly different
+          // size — overwriting was killing the target-height scale and
+          // making the buildings appear at their original tiny GLB size.
           const s = 0.85 + Math.random() * 0.8;
-          inst.scale.setScalar(s);
+          inst.scale.multiplyScalar(s);
           inst.rotation.y = (side > 0 ? Math.PI : 0) + (Math.random() - 0.5) * 0.3;
           inst.position.set(bldgX, 0, bldgZ); // y handled inside the template (bottom at 0)
           seg.add(inst);

@@ -289,8 +289,9 @@ export function normalizeBuildingModel(root, targetHeight = 40) {
   const longestAxis = (size.x > size.y && size.x > size.z) ? 'x'
                     : (size.z > size.y && size.z > size.x) ? 'z'
                     : 'y';
-  if (longestAxis === 'x') root.rotation.z = -Math.PI / 2;
-  else if (longestAxis === 'z') root.rotation.x = Math.PI / 2;
+  // Map the longest axis to +Y. R_z(+π/2) sends +X → +Y, R_x(-π/2) sends +Z → +Y.
+  if (longestAxis === 'x') root.rotation.z = Math.PI / 2;
+  else if (longestAxis === 'z') root.rotation.x = -Math.PI / 2;
 
   // Recompute bbox after potential rotation, then center XZ and lift to ground
   box = new THREE.Box3().setFromObject(root);

@@ -63,6 +63,7 @@ class TrafficCar {
     this._wheelLat    = (pick && pick.wheelLat)    || WHEEL_LATERAL;
     this._wheelLong   = (pick && pick.wheelLong)   || WHEEL_LONGITUDINAL;
     this._wheelRadius = (pick && pick.wheelRadius) || WHEEL_RADIUS_DEFAULT;
+    this._extraLift   = (pick && pick.extraLift)   || 0;
 
     const inner = templateRoot
       ? templateRoot.clone(true)
@@ -82,12 +83,14 @@ class TrafficCar {
     const r = this._wheelRadius ?? WHEEL_RADIUS_DEFAULT;
     const dx = fullX * (this._wheelLat  ?? WHEEL_LATERAL);
     const dz = fullZ * (this._wheelLong ?? WHEEL_LONGITUDINAL);
-    // Index 0/1 = front (smaller Z) so the brain can steer just the front pair.
+    // Wheels sit on the road at y=r; if the body itself is lifted (truck),
+    // that doesn't move the wheels — they stay at road level.
+    const hubY = r - (this._extraLift || 0);
     const hubs = [
-      { x: -dx, y: r, z: -dz, isFront: true  },
-      { x:  dx, y: r, z: -dz, isFront: true  },
-      { x: -dx, y: r, z:  dz, isFront: false },
-      { x:  dx, y: r, z:  dz, isFront: false },
+      { x: -dx, y: hubY, z: -dz, isFront: true  },
+      { x:  dx, y: hubY, z: -dz, isFront: true  },
+      { x: -dx, y: hubY, z:  dz, isFront: false },
+      { x:  dx, y: hubY, z:  dz, isFront: false },
     ];
     for (const h of hubs) {
       // YXZ rotation order: Y (steer) is applied first, then X (spin),
