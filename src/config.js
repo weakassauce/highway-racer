@@ -17,7 +17,8 @@ export const WORLD = {
   fogColor: 0xcfd9e0,
   fogNear: 120,
   fogFar: 1500,
-  cityBlockOffsetX: 22,   // distance from road centerline to first building row
+  cityBlockOffsetX: 55,   // distance from road centerline to first building row
+  cityBlockSpacing: 26,   // distance between successive building rows
 };
 
 // Highway centerline curvature — sum of two sin waves keeps it gentle.

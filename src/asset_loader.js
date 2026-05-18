@@ -300,13 +300,14 @@ export function normalizeBuildingModel(root, targetHeight = 40) {
   root.position.z -= center.z;
   root.position.y -= box.min.y;
 
-  // Scale so the building's height matches targetHeight (after upright fix,
-  // Y should be the tallest axis).
+  // Non-uniform scale: stretch Y to hit targetHeight, but only grow X/Z
+  // 15% as much. Uniform scaling would explode the building footprint
+  // (a 30 m wide source × 6× vertical scale = 180 m wide — eating the road).
   box = new THREE.Box3().setFromObject(root);
   size = box.getSize(new THREE.Vector3());
-  const tallest = Math.max(size.y, 0.001);
-  const scale = targetHeight / tallest;
-  root.scale.setScalar(scale);
+  const baseScale = targetHeight / Math.max(size.y, 0.001);
+  const xzScale = 1 + (baseScale - 1) * 0.15;
+  root.scale.set(xzScale, baseScale, xzScale);
 
   // Re-lift so bottom touches y=0 after scaling
   const box2 = new THREE.Box3().setFromObject(root);

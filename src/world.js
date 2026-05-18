@@ -281,7 +281,8 @@ export class World {
         const localZ = -Math.random() * segLen;
         const worldZ = segZ + localZ;
         const baseX = centerlineX(worldZ);
-        const lat = side * (halfRoadWidth + WORLD.cityBlockOffsetX + b * 14 + Math.random() * 6);
+        const spacing = WORLD.cityBlockSpacing || 14;
+        const lat = side * (halfRoadWidth + WORLD.cityBlockOffsetX + b * spacing + Math.random() * 8);
         const bldgX = baseX + lat;
         const bldgZ = localZ;
 
