@@ -144,6 +144,91 @@ export class World {
       scene.add(seg);
       this.segments.push(seg);
     }
+
+    this._buildClouds(scene);
+  }
+
+  // Realistic clouds: each cloud is a cluster of ~6-12 soft puff sprites
+  // bundled into a Group. Sprites always face the camera so the cluster
+  // reads as a fluffy 3D mass regardless of viewing angle. Clouds live in
+  // a "cloudRoot" Group that we slide along Z with the player so they
+  // appear infinite without us spawning new ones.
+  _buildClouds(scene) {
+    const puffTex = this._makeCloudPuffTexture();
+    const mat = new THREE.SpriteMaterial({
+      map: puffTex,
+      color: 0xffffff,
+      transparent: true,
+      depthWrite: false,
+      fog: true,
+    });
+    this._cloudRoot = new THREE.Group();
+    scene.add(this._cloudRoot);
+
+    const NUM_CLOUDS = 28;
+    for (let i = 0; i < NUM_CLOUDS; i++) {
+      const cloud = new THREE.Group();
+      // Distribute around a wide ring around the origin; later we keep them
+      // recentered on the player.
+      const ringR = 600 + Math.random() * 1400;
+      const theta = Math.random() * Math.PI * 2;
+      const cy = 90 + Math.random() * 110;
+      cloud.position.set(Math.cos(theta) * ringR, cy, Math.sin(theta) * ringR);
+
+      // 6-12 overlapping puffs to give the cluster volume
+      const puffs = 6 + Math.floor(Math.random() * 7);
+      const baseScale = 60 + Math.random() * 80;
+      // Cluster bias — tend wider than tall (real cumulus shape)
+      for (let p = 0; p < puffs; p++) {
+        const sp = new THREE.Sprite(mat);
+        const sx = (Math.random() - 0.5) * baseScale * 1.4;
+        const sy = (Math.random() - 0.5) * baseScale * 0.45;
+        const sz = (Math.random() - 0.5) * baseScale * 1.4;
+        sp.position.set(sx, sy, sz);
+        const s = baseScale * (0.55 + Math.random() * 0.7);
+        sp.scale.set(s, s * 0.7, 1);
+        cloud.add(sp);
+      }
+      this._cloudRoot.add(cloud);
+    }
+  }
+
+  // Soft fluffy cloud puff texture — radial alpha falloff with subtle
+  // density noise so the edge isn't a perfect circle. White with a slight
+  // grey on the shadow side so it has some volume.
+  _makeCloudPuffTexture() {
+    const SIZE = 256;
+    const c = document.createElement('canvas');
+    c.width = c.height = SIZE;
+    const ctx = c.getContext('2d');
+    ctx.clearRect(0, 0, SIZE, SIZE);
+    const cx = SIZE / 2, cy = SIZE * 0.55;
+    // Multi-blob: 4 radial gradients overlap to create an irregular puff
+    const blobs = [
+      { x: 0,     y: 0,    r: SIZE * 0.36, a: 0.95 },
+      { x:  35,   y: -10,  r: SIZE * 0.28, a: 0.80 },
+      { x: -38,   y: -15,  r: SIZE * 0.26, a: 0.78 },
+      { x:  10,   y: -28,  r: SIZE * 0.20, a: 0.65 },
+    ];
+    for (const b of blobs) {
+      const g = ctx.createRadialGradient(cx + b.x, cy + b.y, 4, cx + b.x, cy + b.y, b.r);
+      g.addColorStop(0.00, `rgba(255, 255, 255, ${b.a})`);
+      g.addColorStop(0.55, `rgba(245, 248, 252, ${b.a * 0.55})`);
+      g.addColorStop(1.00, 'rgba(220, 226, 234, 0.0)');
+      ctx.fillStyle = g;
+      ctx.fillRect(0, 0, SIZE, SIZE);
+    }
+    // Sprinkle a touch of texture so the edge isn't dead-smooth
+    for (let i = 0; i < 220; i++) {
+      const a = 0.04 + Math.random() * 0.08;
+      const rx = cx + (Math.random() - 0.5) * SIZE * 0.7;
+      const ry = cy + (Math.random() - 0.5) * SIZE * 0.5;
+      ctx.fillStyle = `rgba(255, 255, 255, ${a})`;
+      ctx.fillRect(rx, ry, 2, 2);
+    }
+    const t = new THREE.CanvasTexture(c);
+    t.colorSpace = THREE.SRGBColorSpace;
+    return t;
   }
 
   _makeSkyTexture() {
@@ -704,5 +789,9 @@ export class World {
         this._buildSegmentGeometry(s, s.position.z);
       }
     }
+    // Drift the cloud ring along with the player so the sky stays full
+    // ahead of them. Clouds are placed in a 600-2000 m ring around their
+    // root; sliding the root's Z keeps them perpetually overhead.
+    if (this._cloudRoot) this._cloudRoot.position.z = playerZ;
   }
 }
