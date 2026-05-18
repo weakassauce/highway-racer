@@ -15,10 +15,11 @@ export class World {
     scene.background = this._makeSkyTexture();
     scene.fog = new THREE.Fog(WORLD.fogColor, WORLD.fogNear, WORLD.fogFar);
 
-    const sun = new THREE.DirectionalLight(0xffe6c8, 0.85);
+    // Brighter daylight sun + warmer sky hemi
+    const sun = new THREE.DirectionalLight(0xfff4d6, 1.5);
     sun.position.set(-0.4, 1.0, -0.2).normalize().multiplyScalar(500);
     scene.add(sun);
-    scene.add(new THREE.HemisphereLight(0x8aa5d4, 0x101418, 0.6));
+    scene.add(new THREE.HemisphereLight(0xa3c8ff, 0x4a4a3a, 1.0));
 
     // Big dark ground plane that fills the world beyond the highway
     const ground = new THREE.Mesh(

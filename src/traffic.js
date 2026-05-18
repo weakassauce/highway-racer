@@ -52,16 +52,23 @@ class TrafficCar {
     while (this.mesh.children.length) this.mesh.remove(this.mesh.children[0]);
     this.wheels = [];
 
+    // Each entry can be either:
+    //   - a Three.js Object3D (legacy)
+    //   - { root, wheelLat, wheelLong } (new per-vehicle metadata)
     const realTemplates = (templates || []).filter(Boolean);
-    const t = realTemplates.length > 0
+    const pick = realTemplates.length > 0
       ? realTemplates[Math.floor(Math.random() * realTemplates.length)]
       : null;
-    const inner = t ? t.clone(true) : buildPlaceholderCar({ bodyColor: this.color });
-    // No tinting — keep the GLB's original materials and colors.
+    const templateRoot = pick && pick.root ? pick.root : pick;
+    this._wheelLat  = (pick && pick.wheelLat)  || WHEEL_LATERAL;
+    this._wheelLong = (pick && pick.wheelLong) || WHEEL_LONGITUDINAL;
+
+    const inner = templateRoot
+      ? templateRoot.clone(true)
+      : buildPlaceholderCar({ bodyColor: this.color });
     this.mesh.add(inner);
     this.body = inner;
 
-    // Attach wheels at canonical hubs sized from the actual body bbox
     this._attachWheels(wheelTemplate);
   }
 
@@ -72,8 +79,8 @@ class TrafficCar {
     const fullX = size.x || CAR.width;
     const fullZ = size.z || CAR.length;
     const r = WHEEL_RADIUS;
-    const dx = fullX * WHEEL_LATERAL;
-    const dz = fullZ * WHEEL_LONGITUDINAL;
+    const dx = fullX * (this._wheelLat  ?? WHEEL_LATERAL);
+    const dz = fullZ * (this._wheelLong ?? WHEEL_LONGITUDINAL);
     const hubs = [
       { x: -dx, y: r, z: -dz },
       { x:  dx, y: r, z: -dz },

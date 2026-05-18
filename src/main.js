@@ -121,25 +121,34 @@ function trySetTrafficWheel() {
   if (wheelTemplate) traffic.setWheelTemplate(wheelTemplate);
 }
 
-// Real-world overall length per template (meters). Each car gets scaled
-// to its own size on import so the proportions on the road feel right —
-// the RAM is visibly bigger than the Mustang, the Jeep is shorter.
+// Real-world dimensions + per-vehicle wheel hub fractions. Each car gets
+// scaled to its own length on import so a RAM towers over a Mustang.
+// `extraRotY` lets us correct individual TRELLIS GLBs whose forward axis
+// came out opposite of the others.
 const TRAFFIC_VARIANTS = [
-  { url: '/assets/traffic_ram.glb',     length: 5.9 },  // Ram 1500 TRX crew cab
-  { url: '/assets/traffic_tesla.glb',   length: 5.0 },  // Tesla Model S
-  { url: '/assets/traffic_jeep.glb',    length: 4.3 },  // Wrangler 2-door
-  { url: '/assets/traffic_mustang.glb', length: 4.7 },  // 69 Boss 302 fastback
+  // Ram 1500 TRX — crew cab, bigger than spec for game presence
+  { url: '/assets/traffic_ram.glb',     length: 6.8, wheelLat: 0.36, wheelLong: 0.32, extraRotY: 0 },
+  // Tesla Model S — long sedan
+  { url: '/assets/traffic_tesla.glb',   length: 5.0, wheelLat: 0.38, wheelLong: 0.30, extraRotY: 0 },
+  // 1969 Mustang Boss 302 — its GLB came out facing the opposite way, flip it
+  { url: '/assets/traffic_mustang.glb', length: 4.7, wheelLat: 0.40, wheelLong: 0.32, extraRotY: Math.PI },
 ];
 
 const trafficTemplates = [];
-function pushTrafficTemplate(g, length) {
+function pushTrafficTemplate(g, variant) {
   if (!g) return;
-  trafficTemplates.push(normalizeCarModel(g, length));
+  const root = normalizeCarModel(g, variant.length);
+  if (variant.extraRotY) root.rotation.y += variant.extraRotY;
+  trafficTemplates.push({
+    root,
+    wheelLat: variant.wheelLat,
+    wheelLong: variant.wheelLong,
+  });
   traffic.setTemplates(trafficTemplates);
   trySetTrafficWheel();
 }
 for (const v of TRAFFIC_VARIANTS) {
-  tryLoadGLB(v.url).then((g) => pushTrafficTemplate(g, v.length));
+  tryLoadGLB(v.url).then((g) => pushTrafficTemplate(g, v));
 }
 
 // Load building variants and rebuild segments so they show up
@@ -151,9 +160,11 @@ function pushBuildingTemplate(g, targetHeight) {
   world.buildingTemplates = buildingTemplates;
   world.rebuildSegments();
 }
-tryLoadGLB('/assets/building1.glb').then((g) => pushBuildingTemplate(g, 90));
-tryLoadGLB('/assets/building2.glb').then((g) => pushBuildingTemplate(g, 30));
-tryLoadGLB('/assets/building3.glb').then((g) => pushBuildingTemplate(g, 22));
+// Way bigger buildings — these target heights get further multiplied by a
+// 0.85–1.65 random per-instance scale in world.js's _scatterBuildings.
+tryLoadGLB('/assets/building1.glb').then((g) => pushBuildingTemplate(g, 180));
+tryLoadGLB('/assets/building2.glb').then((g) => pushBuildingTemplate(g, 110));
+tryLoadGLB('/assets/building3.glb').then((g) => pushBuildingTemplate(g, 80));
 
 const input = new Input();
 const chase = new ChaseCamera(camera);
