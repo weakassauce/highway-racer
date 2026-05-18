@@ -169,6 +169,25 @@ function pushBuildingTemplate(g, targetHeight) {
 
 // Tree GLB hot-loader — segments will use clones of this template if it's
 // loaded by the time they build (or rebuild).
+// Streetlight GLB — normalize to a target height (8 m pole-to-lamp), drop
+// onto y=0 with the base flush to the ground. World scatters clones at each
+// segment if loaded.
+tryLoadGLB('/assets/streetlight.glb').then((g) => {
+  if (!g) return;
+  const box = new THREE.Box3().setFromObject(g);
+  const size = box.getSize(new THREE.Vector3());
+  const center = box.getCenter(new THREE.Vector3());
+  g.position.x -= center.x;
+  g.position.z -= center.z;
+  g.position.y -= box.min.y;
+  const targetHeight = 8.5;
+  g.scale.setScalar(targetHeight / Math.max(size.y, 0.001));
+  const box2 = new THREE.Box3().setFromObject(g);
+  g.position.y -= box2.min.y;
+  world.streetlightTemplate = g;
+  world.rebuildSegments();
+});
+
 tryLoadGLB('/assets/tree.glb').then((g) => {
   if (!g) return;
   // Normalize once: center XZ, lift so trunk base touches y=0, scale tall-ish.

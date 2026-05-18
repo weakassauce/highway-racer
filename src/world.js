@@ -106,6 +106,7 @@ export class World {
     this.scene = scene;
     this.buildingTemplates = opts.buildingTemplates || []; // array of {root, targetHeight}
     this.treeTemplate = opts.treeTemplate || null;          // GLB scene to clone for trees
+    this.streetlightTemplate = opts.streetlightTemplate || null; // GLB scene to clone for lamps
     scene.background = this._makeSkyTexture();
     scene.fog = new THREE.Fog(WORLD.fogColor, WORLD.fogNear, WORLD.fogFar);
 
@@ -541,23 +542,37 @@ export class World {
   }
 
   _addStreetlights(seg, ribs, halfRoadWidth) {
-    const poleMat = new THREE.MeshStandardMaterial({ color: 0x44505a, metalness: 0.6, roughness: 0.5 });
-    const lampMat = new THREE.MeshBasicMaterial({ color: 0xfff3c8 });
-    // One pole per side at the segment midpoint
+    // One pole per side at the segment midpoint. If the streetlight GLB is
+    // loaded, clone it; otherwise fall back to a stick + sphere so the
+    // missing-asset case still looks like SOMETHING.
     const r = ribs[Math.floor(ribs.length / 2)];
+    const tpl = this.streetlightTemplate;
+
     for (const sign of [-1, 1]) {
       const x = r.cx + r.lx * sign * (halfRoadWidth + 2.5);
       const z = r.localZ + r.lz * sign * (halfRoadWidth + 2.5);
-      const pole = new THREE.Mesh(
-        new THREE.CylinderGeometry(0.12, 0.16, 8, 8), poleMat,
-      );
-      pole.position.set(x, 4, z);
-      seg.add(pole);
-      const lamp = new THREE.Mesh(
-        new THREE.SphereGeometry(0.45, 12, 8), lampMat,
-      );
-      lamp.position.set(x + (sign < 0 ? 0.8 : -0.8), 7.8, z);
-      seg.add(lamp);
+      if (tpl) {
+        const inst = tpl.clone(true);
+        inst.position.set(x, 0, z);
+        // Rotate so the curved arm reaches OVER the road (toward the
+        // highway centerline). The GLB faces +X by convention; flip 180°
+        // on the right side so both arms point inward.
+        inst.rotation.y = sign < 0 ? 0 : Math.PI;
+        seg.add(inst);
+      } else {
+        const poleMat = new THREE.MeshStandardMaterial({ color: 0x44505a, metalness: 0.6, roughness: 0.5 });
+        const lampMat = new THREE.MeshBasicMaterial({ color: 0xfff3c8 });
+        const pole = new THREE.Mesh(
+          new THREE.CylinderGeometry(0.12, 0.16, 8, 8), poleMat,
+        );
+        pole.position.set(x, 4, z);
+        seg.add(pole);
+        const lamp = new THREE.Mesh(
+          new THREE.SphereGeometry(0.45, 12, 8), lampMat,
+        );
+        lamp.position.set(x + (sign < 0 ? 0.8 : -0.8), 7.8, z);
+        seg.add(lamp);
+      }
     }
   }
 
