@@ -97,8 +97,10 @@ function reAttachWheels() {
 tryLoadGLB('/assets/wheel.glb').then((g) => {
   if (!g) return;
   wheelTemplateGLB = g;
+  // Always build the wheel template (don't wait for the player car to load —
+  // traffic shares this template too and would otherwise get procedural).
+  wheelTemplate = normalizeWheelModel(wheelTemplateGLB.clone(true), wheelTune.diameter);
   reAttachWheels();
-  // Also feed the wheel into traffic so all NPC cars get matching wheels
   if (typeof trySetTrafficWheel === 'function') trySetTrafficWheel();
 });
 

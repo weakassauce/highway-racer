@@ -115,7 +115,15 @@ class TrafficCar {
       }
       pivot.add(wheel);
       this.mesh.add(pivot);
-      this.wheels.push({ pivot, isFront: h.isFront });
+      // Left wheels carry an extra rotation.y = π on the wheel mesh so the
+      // rim face points outward. That flip also reverses the world-space
+      // direction of the spin axis, so we'd see them rotating backward.
+      // Storing a per-wheel spinSign lets us cancel that out in update().
+      this.wheels.push({
+        pivot,
+        isFront: h.isFront,
+        spinSign: h.x < 0 ? -1 : 1,
+      });
     }
   }
 
@@ -245,7 +253,9 @@ class TrafficCar {
       this._steerAngle = this._steerAngle ?? 0;
       this._steerAngle += (targetSteer - this._steerAngle) * Math.min(1, dt * 6);
       for (const w of this.wheels) {
-        w.pivot.rotation.x = this.wheelAngle;
+        // Left wheels have rotation.y=π on the mesh which inverts their
+        // spin axis; spinSign undoes that so both sides roll the same way.
+        w.pivot.rotation.x = this.wheelAngle * w.spinSign;
         w.pivot.rotation.y = w.isFront ? this._steerAngle : 0;
       }
     }
