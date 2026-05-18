@@ -83,9 +83,10 @@ class TrafficCar {
     const r = this._wheelRadius ?? WHEEL_RADIUS_DEFAULT;
     const dx = fullX * (this._wheelLat  ?? WHEEL_LATERAL);
     const dz = fullZ * (this._wheelLong ?? WHEEL_LONGITUDINAL);
-    // Wheels sit on the road at y=r; if the body itself is lifted (truck),
-    // that doesn't move the wheels — they stay at road level.
-    const hubY = r - (this._extraLift || 0);
+    // Wheel hubs sit at y = r so the tire touches the road (y=0). When the
+    // body is extraLift'ed (truck), the body floats above and the gap shows
+    // through the wheel arch — proper lifted-truck look.
+    const hubY = r;
     const hubs = [
       { x: -dx, y: hubY, z: -dz, isFront: true  },
       { x:  dx, y: hubY, z: -dz, isFront: true  },
@@ -204,11 +205,25 @@ class TrafficCar {
 
     // Hug the curving centerline at the lane offset (gentler 3 m/s slide so
     // lane changes feel deliberate, not snap-to).
-    const targetX = centerlineX(this.position.z) + laneX(this.targetLane, this.direction);
+    const cx = centerlineX(this.position.z);
+    const targetX = cx + laneX(this.targetLane, this.direction);
     const dx = targetX - this.position.x;
     const slide = Math.sign(dx) * Math.min(Math.abs(dx), 3 * dt);
     this.position.x += slide;
     if (Math.abs(dx) < 0.05) this.lane = this.targetLane;
+
+    // Hard clamp into this car's carriageway so a collision push can't shove
+    // the NPC off-road or across the median into oncoming.
+    const minInner = WORLD.medianWidth / 2 + CAR.width / 2;
+    const maxOuter = WORLD.lanesPerSide * WORLD.laneWidth + WORLD.medianWidth / 2 - CAR.width / 2;
+    const xRel = this.position.x - cx;
+    if (this.direction === 1) {
+      if (xRel < minInner) this.position.x = cx + minInner;
+      else if (xRel > maxOuter) this.position.x = cx + maxOuter;
+    } else {
+      if (xRel > -minInner) this.position.x = cx - minInner;
+      else if (xRel < -maxOuter) this.position.x = cx - maxOuter;
+    }
 
     this.mesh.position.copy(this.position);
     this.mesh.rotation.y = (this.direction === 1 ? Math.PI : 0) + (-slide * 0.4);

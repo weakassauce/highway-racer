@@ -2,7 +2,7 @@
 
 export const WORLD = {
   laneWidth: 3.5,
-  lanesPerSide: 2,        // 2 + 2 = 4 lanes total (narrower than before)
+  lanesPerSide: 3,        // 3 + 3 = 6 lanes total
   medianWidth: 4,         // grass median between the two directions
   laneDirection: -1,      // player drives -Z
   roadSegmentLength: 80,
