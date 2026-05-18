@@ -164,12 +164,32 @@ function pushBuildingTemplate(g, targetHeight) {
   world.buildingTemplates = buildingTemplates;
   world.rebuildSegments();
 }
-// Building heights cranked further — they should rival the procedural
-// boxes around them (16-96 m). Per-instance random scale (0.85-1.65 in
-// world.js) means actual on-road sizes hit 250-500 m for skyscrapers.
-tryLoadGLB('/assets/building1.glb').then((g) => pushBuildingTemplate(g, 300));
-tryLoadGLB('/assets/building2.glb').then((g) => pushBuildingTemplate(g, 180));
-tryLoadGLB('/assets/building3.glb').then((g) => pushBuildingTemplate(g, 130));
+
+// Tree GLB hot-loader — segments will use clones of this template if it's
+// loaded by the time they build (or rebuild).
+tryLoadGLB('/assets/tree.glb').then((g) => {
+  if (!g) return;
+  // Normalize once: center XZ, lift so trunk base touches y=0, scale tall-ish.
+  const box = new THREE.Box3().setFromObject(g);
+  const center = box.getCenter(new THREE.Vector3());
+  const size = box.getSize(new THREE.Vector3());
+  g.position.x -= center.x;
+  g.position.z -= center.z;
+  g.position.y -= box.min.y;
+  const targetHeight = 10;
+  const tallest = Math.max(size.y, 0.001);
+  g.scale.setScalar(targetHeight / tallest);
+  const b2 = new THREE.Box3().setFromObject(g);
+  g.position.y -= b2.min.y;
+  world.treeTemplate = g;
+  world.rebuildSegments();
+});
+// Building target heights — uniform scale now, so picking modest heights
+// keeps width reasonable. Per-instance 0.85-1.65 jitter (multiplyScalar)
+// on top means real sizes land roughly 70-150 m tall.
+tryLoadGLB('/assets/building1.glb').then((g) => pushBuildingTemplate(g, 95));
+tryLoadGLB('/assets/building2.glb').then((g) => pushBuildingTemplate(g, 70));
+tryLoadGLB('/assets/building3.glb').then((g) => pushBuildingTemplate(g, 50));
 
 const input = new Input();
 const chase = new ChaseCamera(camera);

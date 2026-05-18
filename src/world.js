@@ -1,6 +1,99 @@
 import * as THREE from 'three';
 import { WORLD, CURVE, centerlineX, centerlineTangent } from './config.js';
 
+// ----- Procedural canvas textures -----
+// All are square, sRGB, and set to REPEAT so they tile across the road / median.
+
+function makeAsphaltTexture() {
+  const c = document.createElement('canvas');
+  c.width = c.height = 256;
+  const ctx = c.getContext('2d');
+  ctx.fillStyle = '#3a3c40';
+  ctx.fillRect(0, 0, 256, 256);
+  // Aggregate speckle: ~8000 tiny dark + light dots
+  for (let i = 0; i < 8000; i++) {
+    const x = Math.random() * 256;
+    const y = Math.random() * 256;
+    const v = (Math.random() - 0.5) * 36;
+    const r = 58 + v, g = 60 + v, b = 64 + v;
+    ctx.fillStyle = `rgb(${r|0},${g|0},${b|0})`;
+    ctx.fillRect(x, y, 1.4, 1.4);
+  }
+  // Occasional pothole / patch
+  for (let i = 0; i < 40; i++) {
+    ctx.fillStyle = `rgba(20, 20, 24, ${0.2 + Math.random() * 0.3})`;
+    ctx.beginPath();
+    ctx.arc(Math.random() * 256, Math.random() * 256, 2 + Math.random() * 5, 0, Math.PI * 2);
+    ctx.fill();
+  }
+  const tex = new THREE.CanvasTexture(c);
+  tex.wrapS = tex.wrapT = THREE.RepeatWrapping;
+  tex.repeat.set(4, 24);
+  tex.anisotropy = 4;
+  tex.colorSpace = THREE.SRGBColorSpace;
+  return tex;
+}
+
+function makeGrassTexture() {
+  const c = document.createElement('canvas');
+  c.width = c.height = 256;
+  const ctx = c.getContext('2d');
+  ctx.fillStyle = '#5d7a40';
+  ctx.fillRect(0, 0, 256, 256);
+  for (let i = 0; i < 6000; i++) {
+    const x = Math.random() * 256, y = Math.random() * 256;
+    const v = (Math.random() - 0.5) * 30;
+    ctx.fillStyle = `rgb(${93 + v | 0},${122 + v | 0},${64 + v | 0})`;
+    ctx.fillRect(x, y, 1.5, 1.5);
+  }
+  for (let i = 0; i < 600; i++) {
+    ctx.fillStyle = `rgba(170, 200, 90, ${0.3 + Math.random() * 0.4})`;
+    ctx.fillRect(Math.random() * 256, Math.random() * 256, 1, 2);
+  }
+  const tex = new THREE.CanvasTexture(c);
+  tex.wrapS = tex.wrapT = THREE.RepeatWrapping;
+  tex.repeat.set(2, 14);
+  tex.anisotropy = 4;
+  tex.colorSpace = THREE.SRGBColorSpace;
+  return tex;
+}
+
+function makeConcreteTexture() {
+  const c = document.createElement('canvas');
+  c.width = c.height = 256;
+  const ctx = c.getContext('2d');
+  ctx.fillStyle = '#c8ccd2';
+  ctx.fillRect(0, 0, 256, 256);
+  // Subtle speckle
+  for (let i = 0; i < 5000; i++) {
+    const x = Math.random() * 256, y = Math.random() * 256;
+    const v = (Math.random() - 0.5) * 18;
+    ctx.fillStyle = `rgb(${200 + v | 0},${204 + v | 0},${210 + v | 0})`;
+    ctx.fillRect(x, y, 1, 1);
+  }
+  // Vertical seams every ~30 px (precast Jersey segments)
+  ctx.strokeStyle = 'rgba(70, 70, 80, 0.4)';
+  ctx.lineWidth = 1;
+  for (let x = 0; x < 256; x += 32) {
+    ctx.beginPath(); ctx.moveTo(x + 0.5, 0); ctx.lineTo(x + 0.5, 256); ctx.stroke();
+  }
+  // Occasional crack
+  for (let i = 0; i < 12; i++) {
+    ctx.strokeStyle = `rgba(40, 40, 50, ${0.3 + Math.random() * 0.3})`;
+    ctx.beginPath();
+    const sx = Math.random() * 256, sy = Math.random() * 256;
+    ctx.moveTo(sx, sy);
+    ctx.lineTo(sx + (Math.random() - 0.5) * 30, sy + (Math.random() - 0.5) * 30);
+    ctx.stroke();
+  }
+  const tex = new THREE.CanvasTexture(c);
+  tex.wrapS = tex.wrapT = THREE.RepeatWrapping;
+  tex.repeat.set(1, 12);
+  tex.anisotropy = 4;
+  tex.colorSpace = THREE.SRGBColorSpace;
+  return tex;
+}
+
 // Curved, two-direction highway. Each segment renders a ribbon of N
 // sub-quads following centerlineX(z), plus dashed lane lines, a grass
 // median, edge barriers, streetlights, and city blocks either side.
@@ -12,6 +105,7 @@ export class World {
   constructor(scene, opts = {}) {
     this.scene = scene;
     this.buildingTemplates = opts.buildingTemplates || []; // array of {root, targetHeight}
+    this.treeTemplate = opts.treeTemplate || null;          // GLB scene to clone for trees
     scene.background = this._makeSkyTexture();
     scene.fog = new THREE.Fog(WORLD.fogColor, WORLD.fogNear, WORLD.fogFar);
 
@@ -30,13 +124,16 @@ export class World {
     ground.position.y = -0.05;
     scene.add(ground);
 
-    // Pre-create materials shared between segments
-    this._asphaltMat = new THREE.MeshStandardMaterial({ color: 0x141518, roughness: 0.92 });
+    // Procedural noise textures so the road and grass don't read as flat colour.
+    const asphaltTex = makeAsphaltTexture();
+    const grassTex   = makeGrassTexture();
+    const concreteTex = makeConcreteTexture();
+    this._asphaltMat = new THREE.MeshStandardMaterial({ map: asphaltTex, color: 0x3a3c40, roughness: 0.95 });
     this._lineMat    = new THREE.MeshBasicMaterial({ color: 0xeef4ff });
     this._edgeMat    = new THREE.MeshBasicMaterial({ color: 0xffd96b });
-    this._medianMat  = new THREE.MeshStandardMaterial({ color: 0x2a3a1c, roughness: 0.95 });
-    this._barrierMat = new THREE.MeshStandardMaterial({ color: 0xb3bcc6, roughness: 0.55, metalness: 0.4 });
-    this._dividerMat = new THREE.MeshStandardMaterial({ color: 0xc4ccd4, roughness: 0.6 });
+    this._medianMat  = new THREE.MeshStandardMaterial({ map: grassTex,   color: 0x5d7a40, roughness: 0.95 });
+    this._barrierMat = new THREE.MeshStandardMaterial({ map: concreteTex, color: 0xc8ccd2, roughness: 0.7, metalness: 0.05 });
+    this._dividerMat = new THREE.MeshStandardMaterial({ map: concreteTex, color: 0xd5d8de, roughness: 0.75 });
 
     this.segments = [];
     for (let i = 0; i < WORLD.visibleSegments; i++) {
@@ -166,11 +263,13 @@ export class World {
       const m = new THREE.Mesh(g, material);
       seg.add(m);
     };
-    buildBarrierStrip(0, 0.5, 0.7, this._dividerMat);
+    // Solid Jersey-style median barrier — taller + wider than before so it
+    // visually separates the two carriageways and stops cars from crossing.
+    buildBarrierStrip(0, 1.0, 1.1, this._dividerMat);
 
     // Edge barriers (outer edges of each carriageway)
-    buildBarrierStrip( halfRoadWidth + 0.4, 0.6, 0.9, this._barrierMat);
-    buildBarrierStrip(-halfRoadWidth - 0.4, 0.6, 0.9, this._barrierMat);
+    buildBarrierStrip( halfRoadWidth + 0.4, 0.6, 0.95, this._barrierMat);
+    buildBarrierStrip(-halfRoadWidth - 0.4, 0.6, 0.95, this._barrierMat);
 
     // ----- Lane divider dashes (dashed white per direction) -----
     // Player's side: between lane positions
@@ -346,30 +445,42 @@ export class World {
   }
 
   _scatterTrees(seg, segZ) {
-    // Cheap procedural trees in the gaps between buildings — gives the
-    // street some greenery without needing a GLB asset.
     const segLen = WORLD.roadSegmentLength;
     const halfRoadWidth = WORLD.lanesPerSide * WORLD.laneWidth + WORLD.medianWidth / 2;
-    const trunkMat = new THREE.MeshStandardMaterial({ color: 0x4a2f1a, roughness: 0.95 });
-    const leafMat  = new THREE.MeshStandardMaterial({ color: 0x2f5a25, roughness: 0.85, flatShading: true });
-    for (let i = 0; i < 8; i++) {
+    const tpl = this.treeTemplate;
+
+    // If we have the GLB tree template, clone it. Otherwise fall back to
+    // a cheap cone+cylinder so a missing asset still gives some greenery.
+    const trunkMat = !tpl && new THREE.MeshStandardMaterial({ color: 0x4a2f1a, roughness: 0.95 });
+    const leafMat  = !tpl && new THREE.MeshStandardMaterial({ color: 0x2f5a25, roughness: 0.85, flatShading: true });
+
+    for (let i = 0; i < 10; i++) {
       const localZ = -Math.random() * segLen;
       const worldZ = segZ + localZ;
       const baseX = centerlineX(worldZ);
       const side = Math.random() < 0.5 ? -1 : 1;
-      const lat = side * (halfRoadWidth + 4 + Math.random() * 12);
-      const tree = new THREE.Group();
-      const trunk = new THREE.Mesh(
-        new THREE.CylinderGeometry(0.16, 0.24, 2.4, 6), trunkMat,
-      );
-      trunk.position.y = 1.2;
-      tree.add(trunk);
-      const leaves = new THREE.Mesh(
-        new THREE.ConeGeometry(1.6, 4.0, 6), leafMat,
-      );
-      leaves.position.y = 3.6;
-      tree.add(leaves);
-      tree.position.set(baseX + lat, 0, localZ);
+      const lat = side * (halfRoadWidth + 5 + Math.random() * 14);
+      const x = baseX + lat;
+
+      let tree;
+      if (tpl) {
+        tree = tpl.clone(true);
+        const s = 0.7 + Math.random() * 0.8; // 0.7-1.5 scale variation
+        tree.scale.multiplyScalar(s);
+      } else {
+        tree = new THREE.Group();
+        const trunk = new THREE.Mesh(
+          new THREE.CylinderGeometry(0.16, 0.24, 2.4, 6), trunkMat,
+        );
+        trunk.position.y = 1.2;
+        tree.add(trunk);
+        const leaves = new THREE.Mesh(
+          new THREE.ConeGeometry(1.6, 4.0, 6), leafMat,
+        );
+        leaves.position.y = 3.6;
+        tree.add(leaves);
+      }
+      tree.position.set(x, 0, localZ);
       tree.rotation.y = Math.random() * Math.PI * 2;
       seg.add(tree);
     }

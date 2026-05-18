@@ -229,10 +229,15 @@ class TrafficCar {
       }
     }
 
-    // Recycle when far behind
-    if (this.direction * (this.position.z - playerZ) >= TRAFFIC.recycleDistBehind) {
+    // Recycle based on player-relative Z (player drives -Z, so +Z is behind
+    // the player). Direction-aware was buggy: oncoming cars satisfied the
+    // recycle condition the moment they spawned 600 m -Z of the player,
+    // so the oncoming carriageway was empty.
+    const behindPlayer = this.position.z - playerZ;
+    if (behindPlayer >= TRAFFIC.recycleDistBehind) {
       this.spawnAhead(playerZ);
-    } else if (-this.direction * (this.position.z - playerZ) >= TRAFFIC.spawnDistAhead + 200) {
+    } else if (behindPlayer <= -(TRAFFIC.spawnDistAhead + 200)) {
+      // Same-direction NPC ran way too far ahead — pull it back into view
       this.spawnAhead(playerZ);
     }
   }
