@@ -314,8 +314,10 @@ export class World {
     const tx = mid.lz, tz = -mid.lx; // perpendicular to lateral = forward
     const px = mid.lx,  pz = mid.lz;  // lateral (across the road)
 
-    const pillarMat = new THREE.MeshStandardMaterial({ color: 0xa3a6ac, roughness: 0.75 });
-    const deckMat   = new THREE.MeshStandardMaterial({ color: 0x9da1a7, roughness: 0.75 });
+    // Neutral concrete grey — no warm/cool tint so the overpass reads as
+    // a plain highway bridge rather than a coloured structure.
+    const pillarMat = new THREE.MeshStandardMaterial({ color: 0x808286, roughness: 0.85 });
+    const deckMat   = new THREE.MeshStandardMaterial({ color: 0x6e7074, roughness: 0.85 });
 
     const clearance = 7.5;
     const deckW = 7;          // depth of the deck along road direction
@@ -358,6 +360,62 @@ export class World {
       );
       rail.rotation.y = Math.atan2(tx, tz);
       seg.add(rail);
+    }
+
+    // Descending approach ramps on each outboard side of the deck. Without
+    // these the deck reads as a floating slab; with them you get the proper
+    // "road crosses over the highway and slopes down to ground level" look.
+    const bridgeTopY = clearance + deckThick;
+    const rampLen   = 38;            // horizontal run from deck edge down to ground
+    const halfDeckSpan = deckLen / 2; // outboard distance from highway centerline
+    const halfRoadDepth = deckW / 2 - 0.3; // ramp width matches deck width
+    const rampMat = new THREE.MeshStandardMaterial({ color: 0x42454a, roughness: 0.92 });
+    const railLowMat = new THREE.MeshStandardMaterial({ color: 0x808286, roughness: 0.8 });
+
+    for (const sideSign of [-1, 1]) {
+      // Top edge: outboard end of the deck
+      const topCx = cx + px * sideSign * halfDeckSpan;
+      const topCz = lz + pz * sideSign * halfDeckSpan;
+      // Bottom edge: rampLen further out, at ground level
+      const botCx = cx + px * sideSign * (halfDeckSpan + rampLen);
+      const botCz = lz + pz * sideSign * (halfDeckSpan + rampLen);
+
+      const tlx = topCx + tx * -halfRoadDepth, tlz = topCz + tz * -halfRoadDepth;
+      const trx = topCx + tx *  halfRoadDepth, trz = topCz + tz *  halfRoadDepth;
+      const blx = botCx + tx * -halfRoadDepth, blz = botCz + tz * -halfRoadDepth;
+      const brx = botCx + tx *  halfRoadDepth, brz = botCz + tz *  halfRoadDepth;
+
+      // Sloped quad (asphalt)
+      const rg = new THREE.BufferGeometry();
+      rg.setAttribute('position', new THREE.Float32BufferAttribute([
+        tlx, bridgeTopY, tlz,
+        trx, bridgeTopY, trz,
+        blx, 0.02,       blz,
+        brx, 0.02,       brz,
+      ], 3));
+      rg.setIndex([0, 2, 1, 1, 2, 3]);
+      rg.computeVertexNormals();
+      seg.add(new THREE.Mesh(rg, rampMat));
+
+      // Low concrete safety wall along both edges of the ramp — 4-vert ribbons
+      // that follow the slope so the wall sits flush on the asphalt.
+      for (const railSign of [-1, 1]) {
+        const inset = halfRoadDepth - 0.1;
+        const txi = tx * railSign * inset, tzi = tz * railSign * inset;
+        const t0x = topCx + txi, t0z = topCz + tzi;
+        const b0x = botCx + txi, b0z = botCz + tzi;
+        const railHeight = 0.85;
+        const wall = new THREE.BufferGeometry();
+        wall.setAttribute('position', new THREE.Float32BufferAttribute([
+          t0x, bridgeTopY + railHeight, t0z, // top-top
+          t0x, bridgeTopY,              t0z, // top-bottom (deck side)
+          b0x, 0.02 + railHeight,       b0z, // bot-top
+          b0x, 0.02,                    b0z, // bot-bottom (ground side)
+        ], 3));
+        wall.setIndex([0, 1, 2, 1, 3, 2]);
+        wall.computeVertexNormals();
+        seg.add(new THREE.Mesh(wall, railLowMat));
+      }
     }
   }
 
