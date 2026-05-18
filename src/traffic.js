@@ -87,11 +87,16 @@ class TrafficCar {
     // body is extraLift'ed (truck), the body floats above and the gap shows
     // through the wheel arch — proper lifted-truck look.
     const hubY = r;
+    // The traffic GLBs are authored with the nose pointing +Z (the wrapper
+    // rotates Y=π for player-direction so the nose faces -Z in world). That
+    // means local +Z is the FRONT of the visible car, local -Z is the REAR.
+    // The previous labels had this backwards, so steer was being applied to
+    // the rear axle during lane changes.
     const hubs = [
-      { x: -dx, y: hubY, z: -dz, isFront: true  },
-      { x:  dx, y: hubY, z: -dz, isFront: true  },
-      { x: -dx, y: hubY, z:  dz, isFront: false },
-      { x:  dx, y: hubY, z:  dz, isFront: false },
+      { x: -dx, y: hubY, z: -dz, isFront: false },
+      { x:  dx, y: hubY, z: -dz, isFront: false },
+      { x: -dx, y: hubY, z:  dz, isFront: true  },
+      { x:  dx, y: hubY, z:  dz, isFront: true  },
     ];
     for (const h of hubs) {
       // YXZ rotation order: Y (steer) is applied first, then X (spin),
