@@ -27,13 +27,14 @@ export function normalizeCarModel(root, targetLength = 4.5) {
   if (longest > 0) root.scale.setScalar(targetLength / longest);
 
   // 3. Auto-rotate so the car's longest horizontal dimension is along Z (length).
-  //    TRELLIS sometimes outputs the car sideways (long axis on X); always
-  //    add a π flip on top because TRELLIS faces +Z by default and we want
-  //    nose at -Z to match the game's "forward = -Z" convention.
+  //    TRELLIS sometimes outputs the car sideways (long axis on X).
+  //    No default π flip here — keeps the player car in the original
+  //    orientation it had before the traffic refactor. Direction-based
+  //    flipping happens in the traffic wrapper itself.
   box = new THREE.Box3().setFromObject(root);
   const size = box.getSize(new THREE.Vector3());
-  let rotY = Math.PI;
-  if (size.x > size.z && size.x > size.y) rotY += Math.PI / 2;
+  let rotY = 0;
+  if (size.x > size.z && size.x > size.y) rotY = Math.PI / 2;
   if (window.carNoseFlip) rotY += Math.PI;
   root.rotation.y = rotY;
 

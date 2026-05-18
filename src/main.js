@@ -121,21 +121,25 @@ function trySetTrafficWheel() {
   if (wheelTemplate) traffic.setWheelTemplate(wheelTemplate);
 }
 
-// Load every traffic variant we have on disk
+// Real-world overall length per template (meters). Each car gets scaled
+// to its own size on import so the proportions on the road feel right —
+// the RAM is visibly bigger than the Mustang, the Jeep is shorter.
+const TRAFFIC_VARIANTS = [
+  { url: '/assets/traffic_ram.glb',     length: 5.9 },  // Ram 1500 TRX crew cab
+  { url: '/assets/traffic_tesla.glb',   length: 5.0 },  // Tesla Model S
+  { url: '/assets/traffic_jeep.glb',    length: 4.3 },  // Wrangler 2-door
+  { url: '/assets/traffic_mustang.glb', length: 4.7 },  // 69 Boss 302 fastback
+];
+
 const trafficTemplates = [];
-function pushTrafficTemplate(g) {
+function pushTrafficTemplate(g, length) {
   if (!g) return;
-  trafficTemplates.push(normalizeCarModel(g, CAR.length));
+  trafficTemplates.push(normalizeCarModel(g, length));
   traffic.setTemplates(trafficTemplates);
   trySetTrafficWheel();
 }
-for (const url of [
-  '/assets/traffic_ram.glb',
-  '/assets/traffic_tesla.glb',
-  '/assets/traffic_jeep.glb',
-  '/assets/traffic_mustang.glb',
-]) {
-  tryLoadGLB(url).then(pushTrafficTemplate);
+for (const v of TRAFFIC_VARIANTS) {
+  tryLoadGLB(v.url).then((g) => pushTrafficTemplate(g, v.length));
 }
 
 // Load building variants and rebuild segments so they show up

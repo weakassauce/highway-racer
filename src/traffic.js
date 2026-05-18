@@ -191,7 +191,7 @@ class TrafficCar {
     if (Math.abs(dx) < 0.05) this.lane = this.targetLane;
 
     this.mesh.position.copy(this.position);
-    this.mesh.rotation.y = (this.direction === 1 ? 0 : Math.PI) + (-slide * 0.6);
+    this.mesh.rotation.y = (this.direction === 1 ? Math.PI : 0) + (-slide * 0.6);
 
     // Spin wheels with distance travelled. Negative sign because positive X
     // rotation rolls the wheel "backward" from the right-side viewer (see
@@ -235,17 +235,18 @@ export class TrafficManager {
 
   initialSpawn(playerZ) { for (const c of this.cars) c.spawnAhead(playerZ); }
 
-  // Hard separation pass — keeps NPCs from clipping into each other when
-  // their look-ahead brain has a moment of indecision (e.g. two cars
-  // converge on the same lane during simultaneous lane changes). O(n²)
-  // is fine at ~32 cars.
+  // Position-only separation between same-lane same-direction NPCs. This is
+  // a last-resort backstop; the brain handles ordinary spacing. We DON'T
+  // touch currentSpeed here (used to brake both by 15% per frame, which
+  // compounded everyone to a standstill in seconds).
   _separate() {
     const minSep = CAR.length * 0.95;
     const minSep2 = minSep * minSep;
     for (let i = 0; i < this.cars.length; i++) {
       for (let j = i + 1; j < this.cars.length; j++) {
         const a = this.cars[i], b = this.cars[j];
-        if (a.direction !== b.direction) continue; // opposing handled by physics if it ever happens
+        if (a.direction !== b.direction) continue;
+        if (a.lane !== b.lane && a.targetLane !== b.lane && a.lane !== b.targetLane) continue;
         const dx = b.position.x - a.position.x;
         const dz = b.position.z - a.position.z;
         const d2 = dx * dx + dz * dz;
@@ -257,10 +258,6 @@ export class TrafficManager {
         a.position.z -= nz * overlap * 0.5;
         b.position.x += nx * overlap * 0.5;
         b.position.z += nz * overlap * 0.5;
-        // Both brake to match the slower of the pair
-        const slow = Math.min(a.currentSpeed, b.currentSpeed) * 0.85;
-        a.currentSpeed = slow;
-        b.currentSpeed = slow;
       }
     }
   }
