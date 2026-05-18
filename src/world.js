@@ -554,10 +554,10 @@ export class World {
       if (tpl) {
         const inst = tpl.clone(true);
         inst.position.set(x, 0, z);
-        // Rotate so the curved arm reaches OVER the road (toward the
-        // highway centerline). The GLB faces +X by convention; flip 180°
-        // on the right side so both arms point inward.
-        inst.rotation.y = sign < 0 ? 0 : Math.PI;
+        // Spin each pole 180° from the previous orientation — the arms
+        // were reaching away from the road; this swing brings them out
+        // over the carriageway.
+        inst.rotation.y = sign < 0 ? Math.PI : 0;
         seg.add(inst);
       } else {
         const poleMat = new THREE.MeshStandardMaterial({ color: 0x44505a, metalness: 0.6, roughness: 0.5 });

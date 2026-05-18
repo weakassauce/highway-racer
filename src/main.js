@@ -180,7 +180,7 @@ tryLoadGLB('/assets/streetlight.glb').then((g) => {
   g.position.x -= center.x;
   g.position.z -= center.z;
   g.position.y -= box.min.y;
-  const targetHeight = 8.5;
+  const targetHeight = 14;
   g.scale.setScalar(targetHeight / Math.max(size.y, 0.001));
   const box2 = new THREE.Box3().setFromObject(g);
   g.position.y -= box2.min.y;
