@@ -121,7 +121,7 @@ function trySetTrafficWheel() {
   if (wheelTemplate) traffic.setWheelTemplate(wheelTemplate);
 }
 
-// Load every traffic variant we have on disk (sedan + SUV + hatchback)
+// Load every traffic variant we have on disk
 const trafficTemplates = [];
 function pushTrafficTemplate(g) {
   if (!g) return;
@@ -129,7 +129,12 @@ function pushTrafficTemplate(g) {
   traffic.setTemplates(trafficTemplates);
   trySetTrafficWheel();
 }
-for (const url of ['/assets/traffic_car.glb', '/assets/traffic_car2.glb', '/assets/traffic_car3.glb']) {
+for (const url of [
+  '/assets/traffic_ram.glb',
+  '/assets/traffic_tesla.glb',
+  '/assets/traffic_jeep.glb',
+  '/assets/traffic_mustang.glb',
+]) {
   tryLoadGLB(url).then(pushTrafficTemplate);
 }
 

@@ -57,16 +57,7 @@ class TrafficCar {
       ? realTemplates[Math.floor(Math.random() * realTemplates.length)]
       : null;
     const inner = t ? t.clone(true) : buildPlaceholderCar({ bodyColor: this.color });
-    if (t) {
-      inner.traverse((o) => {
-        if (o.isMesh && o.material && o.material.color && o.material.metalness !== undefined) {
-          if (o.material.metalness > 0.4) {
-            o.material = o.material.clone();
-            o.material.color = new THREE.Color(this.color);
-          }
-        }
-      });
-    }
+    // No tinting — keep the GLB's original materials and colors.
     this.mesh.add(inner);
     this.body = inner;
 
@@ -244,9 +235,40 @@ export class TrafficManager {
 
   initialSpawn(playerZ) { for (const c of this.cars) c.spawnAhead(playerZ); }
 
+  // Hard separation pass — keeps NPCs from clipping into each other when
+  // their look-ahead brain has a moment of indecision (e.g. two cars
+  // converge on the same lane during simultaneous lane changes). O(n²)
+  // is fine at ~32 cars.
+  _separate() {
+    const minSep = CAR.length * 0.95;
+    const minSep2 = minSep * minSep;
+    for (let i = 0; i < this.cars.length; i++) {
+      for (let j = i + 1; j < this.cars.length; j++) {
+        const a = this.cars[i], b = this.cars[j];
+        if (a.direction !== b.direction) continue; // opposing handled by physics if it ever happens
+        const dx = b.position.x - a.position.x;
+        const dz = b.position.z - a.position.z;
+        const d2 = dx * dx + dz * dz;
+        if (d2 > minSep2 || d2 < 1e-6) continue;
+        const d = Math.sqrt(d2);
+        const overlap = minSep - d;
+        const nx = dx / d, nz = dz / d;
+        a.position.x -= nx * overlap * 0.5;
+        a.position.z -= nz * overlap * 0.5;
+        b.position.x += nx * overlap * 0.5;
+        b.position.z += nz * overlap * 0.5;
+        // Both brake to match the slower of the pair
+        const slow = Math.min(a.currentSpeed, b.currentSpeed) * 0.85;
+        a.currentSpeed = slow;
+        b.currentSpeed = slow;
+      }
+    }
+  }
+
   // Per-frame: drive everyone (with brain) + return first colliding car.
   update(dt, player) {
     for (const c of this.cars) c.update(dt, player.position.z, this.cars);
+    this._separate();
 
     // Player-vs-traffic OBB-ish check (player heading affects local axes)
     const pFwdX = -Math.sin(player.heading);
