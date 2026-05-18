@@ -2,51 +2,110 @@ import * as THREE from 'three';
 import { TRAFFIC, WORLD, CAR, centerlineX } from './config.js';
 import { buildPlaceholderCar } from './car.js';
 
-// AI traffic with two-direction support. Each car has a `direction`:
-//   +1 = same as player (drives -Z)
-//   -1 = oncoming (drives +Z)
-// Lanes are addressed inside one carriageway, then mirrored across the median.
-// The visible mesh sits inside a wrapper Group so we can rotate it 180° for
-// oncoming traffic without losing the GLB's baseline Y=π normalize.
+// Two-direction AI traffic with:
+//   * Multiple body templates (sedan/SUV/hatchback) cloned per car
+//   * Per-car body-colour tint
+//   * Spinning wheel clones (when wheelTemplate is loaded)
+//   * Smarter brain: look-ahead braking, target-speed smoothing, lane
+//     changes that avoid crashing into neighbours
 
-const TRAFFIC_COLORS = [0xc04020, 0x202028, 0x508a90, 0xc09040, 0x808078, 0xe0e0e0, 0x303040, 0x4a6080];
+const TRAFFIC_COLORS = [
+  0xc04020, 0x202028, 0x508a90, 0xc09040, 0x808078,
+  0xe0e0e0, 0x303040, 0x4a6080, 0x40703a, 0x9c5a2c,
+];
+
+const WHEEL_RADIUS = 0.33;
+const WHEEL_LATERAL = 0.36;       // fraction of body bbox X
+const WHEEL_LONGITUDINAL = 0.30;  // fraction of body bbox Z
 
 function laneX(lane, direction) {
-  // Lanes 0..lanesPerSide-1 inside a carriageway, ordered from outer to inner.
-  // direction +1 → right carriageway (positive X relative to centerline)
-  // direction -1 → left carriageway (negative X relative to centerline)
-  const inner = WORLD.medianWidth / 2 + WORLD.laneWidth / 2; // inside-lane center
+  // direction +1 → player's carriageway (positive X off centerline)
+  // direction -1 → oncoming (negative X off centerline)
+  const inner = WORLD.medianWidth / 2 + WORLD.laneWidth / 2;
   return direction * (inner + lane * WORLD.laneWidth);
 }
 
 class TrafficCar {
-  constructor(scene, template) {
+  constructor(scene) {
     this.scene = scene;
-    this.mesh = new THREE.Group(); // wrapper we can freely rotate
+    this.mesh = new THREE.Group(); // wrapper we can rotate freely
+    scene.add(this.mesh);
+    this.body = null;
+    this.wheels = [];
+    this.wheelAngle = 0;
+    this.lane = 0;
+    this.targetLane = 0;
+    this.direction = 1;
+    this.position = new THREE.Vector3();
 
-    // The visual mesh goes inside the wrapper. Baseline rotation (e.g. the
-    // Y=π that normalizeCarModel applies to TRELLIS GLBs) stays on the
-    // inner object; we control direction via the wrapper.
-    const color = TRAFFIC_COLORS[Math.floor(Math.random() * TRAFFIC_COLORS.length)];
-    const inner = template ? template.clone(true) : buildPlaceholderCar({ bodyColor: color });
-    if (template) {
+    // Speed brain — each car has a preferred nominal pace + an instantaneous
+    // currentSpeed that eases toward targetSpeed.
+    this.nominalSpeed = TRAFFIC.speedMin + Math.random() * (TRAFFIC.speedMax - TRAFFIC.speedMin);
+    this.currentSpeed = this.nominalSpeed;
+    this.targetSpeed = this.nominalSpeed;
+    this.color = TRAFFIC_COLORS[Math.floor(Math.random() * TRAFFIC_COLORS.length)];
+  }
+
+  // (Re)build the body mesh inside the wrapper. Picks a random template if
+  // any are supplied. Also rebuilds wheel rigs from the latest wheel template.
+  rebuild(templates, wheelTemplate) {
+    while (this.mesh.children.length) this.mesh.remove(this.mesh.children[0]);
+    this.wheels = [];
+
+    const realTemplates = (templates || []).filter(Boolean);
+    const t = realTemplates.length > 0
+      ? realTemplates[Math.floor(Math.random() * realTemplates.length)]
+      : null;
+    const inner = t ? t.clone(true) : buildPlaceholderCar({ bodyColor: this.color });
+    if (t) {
       inner.traverse((o) => {
         if (o.isMesh && o.material && o.material.color && o.material.metalness !== undefined) {
           if (o.material.metalness > 0.4) {
             o.material = o.material.clone();
-            o.material.color = new THREE.Color(color);
+            o.material.color = new THREE.Color(this.color);
           }
         }
       });
     }
     this.mesh.add(inner);
+    this.body = inner;
 
-    scene.add(this.mesh);
-    this.lane = 0;
-    this.targetLane = 0;
-    this.direction = 1;
-    this.position = new THREE.Vector3();
-    this.speed = 30;
+    // Attach wheels at canonical hubs sized from the actual body bbox
+    this._attachWheels(wheelTemplate);
+  }
+
+  _attachWheels(wheelTemplate) {
+    if (!this.body) return;
+    const bbox = new THREE.Box3().setFromObject(this.body);
+    const size = bbox.getSize(new THREE.Vector3());
+    const fullX = size.x || CAR.width;
+    const fullZ = size.z || CAR.length;
+    const r = WHEEL_RADIUS;
+    const dx = fullX * WHEEL_LATERAL;
+    const dz = fullZ * WHEEL_LONGITUDINAL;
+    const hubs = [
+      { x: -dx, y: r, z: -dz },
+      { x:  dx, y: r, z: -dz },
+      { x: -dx, y: r, z:  dz },
+      { x:  dx, y: r, z:  dz },
+    ];
+    for (const h of hubs) {
+      const spin = new THREE.Group();
+      spin.position.set(h.x, h.y, h.z);
+      let wheel;
+      if (wheelTemplate) {
+        wheel = wheelTemplate.clone(true);
+        if (h.x < 0) wheel.rotation.y += Math.PI;
+      } else {
+        const geo = new THREE.CylinderGeometry(WHEEL_RADIUS, WHEEL_RADIUS, 0.26, 14);
+        const mat = new THREE.MeshStandardMaterial({ color: 0x0a0a0c, roughness: 0.85 });
+        wheel = new THREE.Mesh(geo, mat);
+        wheel.rotation.z = Math.PI / 2;
+      }
+      spin.add(wheel);
+      this.mesh.add(spin);
+      this.wheels.push(spin);
+    }
   }
 
   spawnAhead(playerZ) {
@@ -54,26 +113,84 @@ class TrafficCar {
     this.lane = Math.floor(Math.random() * WORLD.lanesPerSide);
     this.targetLane = this.lane;
     const distance = 120 + Math.random() * (TRAFFIC.spawnDistAhead - 120);
-    // Spawn ahead of the player (player is going -Z, so ahead = -Z)
     const z = playerZ - distance;
     const x = centerlineX(z) + laneX(this.lane, this.direction);
     this.position.set(x, 0, z);
-    this.speed = TRAFFIC.speedMin + Math.random() * (TRAFFIC.speedMax - TRAFFIC.speedMin);
+    this.nominalSpeed = TRAFFIC.speedMin + Math.random() * (TRAFFIC.speedMax - TRAFFIC.speedMin);
+    this.currentSpeed = this.nominalSpeed;
+    this.targetSpeed = this.nominalSpeed;
     this.mesh.position.copy(this.position);
-    // Set wrapper rotation: +1 (player-direction) = 0, -1 (oncoming) = π
     this.mesh.rotation.y = this.direction === 1 ? 0 : Math.PI;
   }
 
-  update(dt, playerZ) {
-    // Occasional lane change inside this carriageway
-    if (this.lane === this.targetLane && Math.random() < TRAFFIC.laneChangeChance) {
-      const delta = Math.random() < 0.5 ? -1 : 1;
-      const newLane = this.lane + delta;
-      if (newLane >= 0 && newLane < WORLD.lanesPerSide) this.targetLane = newLane;
+  // Look-ahead query: find the nearest other car in front of us in the
+  // same lane and direction. Returns { car, gap } or null.
+  _scanAhead(allCars, lane, lookAhead) {
+    let best = null, bestGap = Infinity;
+    for (const o of allCars) {
+      if (o === this) continue;
+      if (o.direction !== this.direction || o.lane !== lane) continue;
+      // "ahead" = in the direction this car is travelling. Player-direction
+      // (+1) moves -Z, so a car ahead has smaller z. Oncoming (-1) moves +Z.
+      const dz = (o.position.z - this.position.z) * -this.direction;
+      if (dz > 0 && dz < bestGap) { bestGap = dz; best = o; }
+    }
+    if (best && bestGap <= lookAhead) return { car: best, gap: bestGap };
+    return null;
+  }
+
+  _laneClear(allCars, lane, behindWindow, aheadWindow) {
+    for (const o of allCars) {
+      if (o === this) continue;
+      if (o.direction !== this.direction || (o.lane !== lane && o.targetLane !== lane)) continue;
+      const dz = (o.position.z - this.position.z) * -this.direction;
+      if (dz > -behindWindow && dz < aheadWindow) return false;
+    }
+    return true;
+  }
+
+  update(dt, playerZ, allCars) {
+    // ---- Brain ----
+    // 1) Look-ahead in current lane; brake or change lane if blocked.
+    const ahead = this._scanAhead(allCars, this.lane, 80);
+    if (ahead) {
+      // Match speed of slower car ahead; brake harder if gap is tight.
+      const target = Math.min(this.nominalSpeed, ahead.car.currentSpeed * 0.95);
+      this.targetSpeed = ahead.gap < 18 ? Math.max(6, ahead.car.currentSpeed - 6) : target;
+      // Try to lane-change when the gap is tightening
+      if (this.lane === this.targetLane && ahead.gap < 36 && Math.random() < 0.08) {
+        const candidates = [this.lane - 1, this.lane + 1].filter(
+          l => l >= 0 && l < WORLD.lanesPerSide,
+        );
+        for (const c of candidates.sort(() => Math.random() - 0.5)) {
+          if (this._laneClear(allCars, c, 12, 40)) {
+            this.targetLane = c;
+            break;
+          }
+        }
+      }
+    } else {
+      // Open road — drift back toward nominal pace
+      this.targetSpeed = this.nominalSpeed;
     }
 
-    // Move along Z by direction * speed. direction +1 ⇒ -Z (with player).
-    this.position.z -= this.direction * this.speed * dt;
+    // 2) Smooth speed adjustment (accelerate slower than brake)
+    const dv = this.targetSpeed - this.currentSpeed;
+    const rate = dv > 0 ? 4.0 : 9.0; // m/s²
+    this.currentSpeed += Math.sign(dv) * Math.min(Math.abs(dv), rate * dt);
+
+    // 3) Occasional spontaneous lane-change even on open road
+    if (this.lane === this.targetLane && !ahead && Math.random() < TRAFFIC.laneChangeChance) {
+      const candidates = [this.lane - 1, this.lane + 1].filter(
+        l => l >= 0 && l < WORLD.lanesPerSide,
+      );
+      for (const c of candidates.sort(() => Math.random() - 0.5)) {
+        if (this._laneClear(allCars, c, 12, 40)) { this.targetLane = c; break; }
+      }
+    }
+
+    // ---- Move ----
+    this.position.z -= this.direction * this.currentSpeed * dt;
 
     // Hug the curving centerline at the lane offset
     const targetX = centerlineX(this.position.z) + laneX(this.targetLane, this.direction);
@@ -83,11 +200,20 @@ class TrafficCar {
     if (Math.abs(dx) < 0.05) this.lane = this.targetLane;
 
     this.mesh.position.copy(this.position);
-    // Direction baseline + small slide tilt for lane changes
     this.mesh.rotation.y = (this.direction === 1 ? 0 : Math.PI) + (-slide * 0.6);
 
-    // Recycle when behind the player (in the direction of player travel)
-    if (this.position.z > playerZ + TRAFFIC.recycleDistBehind) {
+    // Spin wheels with distance travelled. Negative sign because positive X
+    // rotation rolls the wheel "backward" from the right-side viewer (see
+    // highway-racer player-car notes for the sign derivation).
+    if (this.wheels.length > 0) {
+      this.wheelAngle -= (this.currentSpeed * dt) / WHEEL_RADIUS;
+      for (const w of this.wheels) w.rotation.x = this.wheelAngle;
+    }
+
+    // Recycle when far behind
+    if (this.direction * (this.position.z - playerZ) >= TRAFFIC.recycleDistBehind) {
+      this.spawnAhead(playerZ);
+    } else if (-this.direction * (this.position.z - playerZ) >= TRAFFIC.spawnDistAhead + 200) {
       this.spawnAhead(playerZ);
     }
   }
@@ -97,27 +223,40 @@ export class TrafficManager {
   constructor(scene) {
     this.scene = scene;
     this.cars = [];
-    for (let i = 0; i < TRAFFIC.count; i++) this.cars.push(new TrafficCar(scene));
+    this.templates = [];
+    this.wheelTemplate = null;
+    for (let i = 0; i < TRAFFIC.count; i++) {
+      const c = new TrafficCar(scene);
+      c.rebuild(this.templates, this.wheelTemplate);
+      this.cars.push(c);
+    }
   }
 
-  initialSpawn(playerZ) {
-    for (const c of this.cars) c.spawnAhead(playerZ);
+  setTemplates(templates) {
+    this.templates = templates;
+    for (const c of this.cars) c.rebuild(this.templates, this.wheelTemplate);
   }
 
-  // Returns the first colliding traffic car (if any). Uses an oriented bbox
-  // check via projection onto the car's forward and right axes.
+  setWheelTemplate(tpl) {
+    this.wheelTemplate = tpl;
+    for (const c of this.cars) c.rebuild(this.templates, this.wheelTemplate);
+  }
+
+  initialSpawn(playerZ) { for (const c of this.cars) c.spawnAhead(playerZ); }
+
+  // Per-frame: drive everyone (with brain) + return first colliding car.
   update(dt, player) {
-    let hit = null;
+    for (const c of this.cars) c.update(dt, player.position.z, this.cars);
+
+    // Player-vs-traffic OBB-ish check (player heading affects local axes)
     const pFwdX = -Math.sin(player.heading);
     const pFwdZ = -Math.cos(player.heading);
-    const pRightX = Math.cos(player.heading);
+    const pRightX =  Math.cos(player.heading);
     const pRightZ = -Math.sin(player.heading);
     const halfLen = CAR.length / 2;
     const halfWid = CAR.width / 2;
+    let hit = null;
     for (const c of this.cars) {
-      c.update(dt, player.position.z);
-      // Approx OBB intersection: project the relative position into player's
-      // local axes; treat traffic car as a sphere of radius ~CAR.width.
       const rx = c.position.x - player.position.x;
       const rz = c.position.z - player.position.z;
       const longi = rx * pFwdX + rz * pFwdZ;

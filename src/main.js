@@ -7,7 +7,7 @@ import { TrafficManager } from './traffic.js';
 import { ChaseCamera } from './camera.js';
 import { Input } from './input.js';
 import { HUD } from './hud.js';
-import { tryLoadGLB, normalizeCarModel, normalizeWheelModel } from './asset_loader.js';
+import { tryLoadGLB, normalizeCarModel, normalizeWheelModel, normalizeBuildingModel } from './asset_loader.js';
 
 const app = document.getElementById('app');
 const renderer = new THREE.WebGLRenderer({ antialias: true, powerPreference: 'high-performance' });
@@ -98,6 +98,8 @@ tryLoadGLB('/assets/wheel.glb').then((g) => {
   if (!g) return;
   wheelTemplateGLB = g;
   reAttachWheels();
+  // Also feed the wheel into traffic so all NPC cars get matching wheels
+  if (typeof trySetTrafficWheel === 'function') trySetTrafficWheel();
 });
 
 tryLoadGLB('/assets/player_car.glb').then((g) => {
@@ -114,17 +116,35 @@ tryLoadGLB('/assets/player_car.glb').then((g) => {
 const traffic = new TrafficManager(scene);
 traffic.initialSpawn(car.position.z);
 
-// Swap traffic models when a separate traffic GLB is available
-tryLoadGLB('/assets/traffic_car.glb').then((g) => {
+// Hot-swap the wheel template into traffic as soon as it's loaded
+function trySetTrafficWheel() {
+  if (wheelTemplate) traffic.setWheelTemplate(wheelTemplate);
+}
+
+// Load every traffic variant we have on disk (sedan + SUV + hatchback)
+const trafficTemplates = [];
+function pushTrafficTemplate(g) {
   if (!g) return;
-  const template = normalizeCarModel(g, CAR.length);
-  for (const t of traffic.cars) {
-    scene.remove(t.mesh);
-    t.mesh = template.clone(true);
-    t.mesh.traverse((o) => { if (o.isMesh && o.material) o.material = o.material.clone(); });
-    scene.add(t.mesh);
-  }
-});
+  trafficTemplates.push(normalizeCarModel(g, CAR.length));
+  traffic.setTemplates(trafficTemplates);
+  trySetTrafficWheel();
+}
+for (const url of ['/assets/traffic_car.glb', '/assets/traffic_car2.glb', '/assets/traffic_car3.glb']) {
+  tryLoadGLB(url).then(pushTrafficTemplate);
+}
+
+// Load building variants and rebuild segments so they show up
+const buildingTemplates = [];
+function pushBuildingTemplate(g, targetHeight) {
+  if (!g) return;
+  const root = normalizeBuildingModel(g, targetHeight);
+  buildingTemplates.push({ root });
+  world.buildingTemplates = buildingTemplates;
+  world.rebuildSegments();
+}
+tryLoadGLB('/assets/building1.glb').then((g) => pushBuildingTemplate(g, 90));
+tryLoadGLB('/assets/building2.glb').then((g) => pushBuildingTemplate(g, 30));
+tryLoadGLB('/assets/building3.glb').then((g) => pushBuildingTemplate(g, 22));
 
 const input = new Input();
 const chase = new ChaseCamera(camera);
@@ -160,14 +180,14 @@ function frame(now) {
   // Traffic + collisions (impulse-based; both cars feel it)
   const hit = traffic.update(dt, car);
   if (hit) {
-    // Traffic car velocity vector for relative impulse
     const dir = hit.direction || 1;
-    const vTraffic = new THREE.Vector3(0, 0, -dir * hit.speed);
+    const vTraffic = new THREE.Vector3(0, 0, -dir * hit.currentSpeed);
     car.collideWith(hit.position, vTraffic, 0.35);
-    // Bump the traffic car aside (small kick)
     const away = new THREE.Vector3().subVectors(hit.position, car.position).normalize();
     hit.position.addScaledVector(away, 1.0);
-    hit.speed = Math.max(8, hit.speed * 0.75); // they brake briefly too
+    // Traffic AI brakes hard after a hit
+    hit.currentSpeed = Math.max(6, hit.currentSpeed * 0.6);
+    hit.targetSpeed  = Math.max(8, hit.nominalSpeed * 0.7);
   }
 
   world.update(car.position.z);

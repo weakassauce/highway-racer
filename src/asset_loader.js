@@ -276,6 +276,34 @@ export function extractWheelsFromCar(root, carLength, carWidth) {
   return { wheels: wheelMeshes, wheelHubs };
 }
 
+// Normalize a building GLB so it sits on y=0 (ground level) and has roughly
+// the target height. TRELLIS buildings come out at arbitrary scale + facing.
+export function normalizeBuildingModel(root, targetHeight = 40) {
+  const box = new THREE.Box3().setFromObject(root);
+  const center = box.getCenter(new THREE.Vector3());
+  const size = box.getSize(new THREE.Vector3());
+  // Center on origin in XZ but keep bottom at y=0
+  root.position.x -= center.x;
+  root.position.z -= center.z;
+  root.position.y -= box.min.y;
+  // Scale so the building's tallest dimension is approximately targetHeight
+  const tallest = Math.max(size.y, 0.001);
+  const scale = targetHeight / tallest;
+  root.scale.setScalar(scale);
+  // After scale we may need to recompute bbox to re-lift
+  const box2 = new THREE.Box3().setFromObject(root);
+  root.position.y -= box2.min.y;
+  root.traverse((o) => {
+    if (!o.isMesh) return;
+    o.castShadow = false;
+    o.receiveShadow = false;
+    if (o.material) {
+      if ('envMapIntensity' in o.material) o.material.envMapIntensity = 1.0;
+    }
+  });
+  return root;
+}
+
 export async function forgeRequest(prompt) {
   const r = await fetch('/forge/generate', {
     method: 'POST',

@@ -9,8 +9,9 @@ import { WORLD, CURVE, centerlineX, centerlineTangent } from './config.js';
 // it jumps ahead and its geometry is rebuilt for the new world Z.
 
 export class World {
-  constructor(scene) {
+  constructor(scene, opts = {}) {
     this.scene = scene;
+    this.buildingTemplates = opts.buildingTemplates || []; // array of {root, targetHeight}
     scene.background = this._makeSkyTexture();
     scene.fog = new THREE.Fog(WORLD.fogColor, WORLD.fogNear, WORLD.fogFar);
 
@@ -268,21 +269,34 @@ export class World {
     const lanesPerSide = WORLD.lanesPerSide;
     const halfRoadWidth = lanesPerSide * WORLD.laneWidth + WORLD.medianWidth / 2;
     const buildingsPerSide = 5;
+    const templates = this.buildingTemplates || [];
 
     for (let side = -1; side <= 1; side += 2) {
       for (let b = 0; b < buildingsPerSide; b++) {
-        const w = 8 + Math.random() * 14;
-        const h = 16 + Math.random() * 80;
-        const d = 9 + Math.random() * 14;
         const localZ = -Math.random() * segLen;
         const worldZ = segZ + localZ;
         const baseX = centerlineX(worldZ);
-        // Push side outward by the road edge + first-building offset + extra spread
         const lat = side * (halfRoadWidth + WORLD.cityBlockOffsetX + b * 14 + Math.random() * 6);
         const bldgX = baseX + lat;
         const bldgZ = localZ;
 
-        // Building body — dark with random hue tint
+        // If we have GLB building templates, clone one of them at random and
+        // place it; otherwise drop a procedural lit-window box like before.
+        if (templates.length > 0 && Math.random() < 0.85) {
+          const tpl = templates[Math.floor(Math.random() * templates.length)];
+          const inst = tpl.root.clone(true);
+          // Slight random scale variation around the template's natural size
+          const s = 0.85 + Math.random() * 0.8;
+          inst.scale.setScalar(s);
+          inst.rotation.y = (side > 0 ? Math.PI : 0) + (Math.random() - 0.5) * 0.3;
+          inst.position.set(bldgX, 0, bldgZ); // y handled inside the template (bottom at 0)
+          seg.add(inst);
+          continue;
+        }
+
+        const w = 8 + Math.random() * 14;
+        const h = 16 + Math.random() * 80;
+        const d = 9 + Math.random() * 14;
         const hue = 0.55 + Math.random() * 0.3;
         const sat = 0.05 + Math.random() * 0.12;
         const mat = new THREE.MeshStandardMaterial({
@@ -293,17 +307,14 @@ export class World {
         const bldg = new THREE.Mesh(new THREE.BoxGeometry(w, h, d), mat);
         bldg.position.set(bldgX, h / 2, bldgZ);
         seg.add(bldg);
-
-        // Lit windows: small emissive panels stuck to the front face
         const winRows = Math.floor(h / 4);
         const winCols = Math.floor(w / 2.5);
         const winColor = new THREE.Color().setHSL(0.12 + Math.random() * 0.12, 0.6, 0.55);
         const winMat = new THREE.MeshBasicMaterial({ color: winColor });
-        // A thin emissive box across the building's road-facing face
         const winGeo = new THREE.PlaneGeometry(0.9, 1.4);
         for (let r = 0; r < winRows; r++) {
           for (let c = 0; c < winCols; c++) {
-            if (Math.random() > 0.55) continue; // not every window is lit
+            if (Math.random() > 0.55) continue;
             const wp = new THREE.Mesh(winGeo, winMat);
             const wx = (c - (winCols - 1) / 2) * 2.5;
             const wy = (r + 0.5) * (h / winRows) - h / 2;
@@ -313,6 +324,14 @@ export class World {
           }
         }
       }
+    }
+  }
+
+  // Refresh all segments with new building templates (or other state).
+  // Cheap because terrain is the heavy bit and that's untouched.
+  rebuildSegments() {
+    for (const seg of this.segments) {
+      this._buildSegmentGeometry(seg, seg.position.z);
     }
   }
 
