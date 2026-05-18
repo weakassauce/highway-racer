@@ -52,11 +52,15 @@ export class World {
     const c = document.createElement('canvas');
     c.width = 4; c.height = 512;
     const ctx = c.getContext('2d');
-    const top = new THREE.Color(WORLD.skyTop);
-    const bot = new THREE.Color(WORLD.skyBottom);
+    const hx = (v) => {
+      const c2 = new THREE.Color(v);
+      return `rgb(${c2.r*255|0},${c2.g*255|0},${c2.b*255|0})`;
+    };
     const g = ctx.createLinearGradient(0, 0, 0, 512);
-    g.addColorStop(0, `rgb(${top.r*255|0},${top.g*255|0},${top.b*255|0})`);
-    g.addColorStop(1, `rgb(${bot.r*255|0},${bot.g*255|0},${bot.b*255|0})`);
+    g.addColorStop(0.00, hx(WORLD.skyTop));      // zenith
+    g.addColorStop(0.45, hx(WORLD.skyMid));      // mid-sky
+    g.addColorStop(0.82, hx(WORLD.skyLow));      // lower band
+    g.addColorStop(1.00, hx(WORLD.skyHorizon));  // warm horizon
     ctx.fillStyle = g; ctx.fillRect(0, 0, 4, 512);
     const t = new THREE.CanvasTexture(c);
     t.colorSpace = THREE.SRGBColorSpace;

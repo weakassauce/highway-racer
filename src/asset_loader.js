@@ -277,30 +277,45 @@ export function extractWheelsFromCar(root, carLength, carWidth) {
   return { wheels: wheelMeshes, wheelHubs };
 }
 
-// Normalize a building GLB so it sits on y=0 (ground level) and has roughly
-// the target height. TRELLIS buildings come out at arbitrary scale + facing.
+// Normalize a building GLB so it sits on y=0 and is approximately targetHeight
+// tall. TRELLIS sometimes outputs sideways buildings (long axis on X or Z
+// instead of Y) — we detect that and rotate upright.
 export function normalizeBuildingModel(root, targetHeight = 40) {
-  const box = new THREE.Box3().setFromObject(root);
+  let box = new THREE.Box3().setFromObject(root);
+  let size = box.getSize(new THREE.Vector3());
+
+  // If a horizontal axis is significantly taller than Y, the building is
+  // lying on its side. Rotate so the longest axis points up.
+  const longestAxis = (size.x > size.y && size.x > size.z) ? 'x'
+                    : (size.z > size.y && size.z > size.x) ? 'z'
+                    : 'y';
+  if (longestAxis === 'x') root.rotation.z = -Math.PI / 2;
+  else if (longestAxis === 'z') root.rotation.x = Math.PI / 2;
+
+  // Recompute bbox after potential rotation, then center XZ and lift to ground
+  box = new THREE.Box3().setFromObject(root);
   const center = box.getCenter(new THREE.Vector3());
-  const size = box.getSize(new THREE.Vector3());
-  // Center on origin in XZ but keep bottom at y=0
   root.position.x -= center.x;
   root.position.z -= center.z;
   root.position.y -= box.min.y;
-  // Scale so the building's tallest dimension is approximately targetHeight
+
+  // Scale so the building's height matches targetHeight (after upright fix,
+  // Y should be the tallest axis).
+  box = new THREE.Box3().setFromObject(root);
+  size = box.getSize(new THREE.Vector3());
   const tallest = Math.max(size.y, 0.001);
   const scale = targetHeight / tallest;
   root.scale.setScalar(scale);
-  // After scale we may need to recompute bbox to re-lift
+
+  // Re-lift so bottom touches y=0 after scaling
   const box2 = new THREE.Box3().setFromObject(root);
   root.position.y -= box2.min.y;
+
   root.traverse((o) => {
     if (!o.isMesh) return;
     o.castShadow = false;
     o.receiveShadow = false;
-    if (o.material) {
-      if ('envMapIntensity' in o.material) o.material.envMapIntensity = 1.0;
-    }
+    if (o.material && 'envMapIntensity' in o.material) o.material.envMapIntensity = 1.0;
   });
   return root;
 }

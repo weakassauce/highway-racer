@@ -126,12 +126,11 @@ function trySetTrafficWheel() {
 // `extraRotY` lets us correct individual TRELLIS GLBs whose forward axis
 // came out opposite of the others.
 const TRAFFIC_VARIANTS = [
-  // Ram 1500 TRX — crew cab, bigger than spec for game presence
-  { url: '/assets/traffic_ram.glb',     length: 6.8, wheelLat: 0.36, wheelLong: 0.32, extraRotY: 0 },
-  // Tesla Model S — long sedan
-  { url: '/assets/traffic_tesla.glb',   length: 5.0, wheelLat: 0.38, wheelLong: 0.30, extraRotY: 0 },
-  // 1969 Mustang Boss 302 — its GLB came out facing the opposite way, flip it
-  { url: '/assets/traffic_mustang.glb', length: 4.7, wheelLat: 0.40, wheelLong: 0.32, extraRotY: Math.PI },
+  // length / wheelLat / wheelLong fractions of bbox; wheelRadius in meters.
+  // Lateral fractions tightened a touch so wheels don't poke through fenders.
+  { url: '/assets/traffic_ram.glb',     length: 6.8, wheelLat: 0.33, wheelLong: 0.30, wheelRadius: 0.46, extraRotY: 0 },
+  { url: '/assets/traffic_tesla.glb',   length: 5.0, wheelLat: 0.34, wheelLong: 0.30, wheelRadius: 0.34, extraRotY: 0 },
+  { url: '/assets/traffic_mustang.glb', length: 4.7, wheelLat: 0.34, wheelLong: 0.32, wheelRadius: 0.34, extraRotY: Math.PI },
 ];
 
 const trafficTemplates = [];
@@ -143,6 +142,7 @@ function pushTrafficTemplate(g, variant) {
     root,
     wheelLat: variant.wheelLat,
     wheelLong: variant.wheelLong,
+    wheelRadius: variant.wheelRadius,
   });
   traffic.setTemplates(trafficTemplates);
   trySetTrafficWheel();
@@ -160,11 +160,12 @@ function pushBuildingTemplate(g, targetHeight) {
   world.buildingTemplates = buildingTemplates;
   world.rebuildSegments();
 }
-// Way bigger buildings — these target heights get further multiplied by a
-// 0.85–1.65 random per-instance scale in world.js's _scatterBuildings.
-tryLoadGLB('/assets/building1.glb').then((g) => pushBuildingTemplate(g, 180));
-tryLoadGLB('/assets/building2.glb').then((g) => pushBuildingTemplate(g, 110));
-tryLoadGLB('/assets/building3.glb').then((g) => pushBuildingTemplate(g, 80));
+// Building heights cranked further — they should rival the procedural
+// boxes around them (16-96 m). Per-instance random scale (0.85-1.65 in
+// world.js) means actual on-road sizes hit 250-500 m for skyscrapers.
+tryLoadGLB('/assets/building1.glb').then((g) => pushBuildingTemplate(g, 300));
+tryLoadGLB('/assets/building2.glb').then((g) => pushBuildingTemplate(g, 180));
+tryLoadGLB('/assets/building3.glb').then((g) => pushBuildingTemplate(g, 130));
 
 const input = new Input();
 const chase = new ChaseCamera(camera);

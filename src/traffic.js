@@ -14,8 +14,8 @@ const TRAFFIC_COLORS = [
   0xe0e0e0, 0x303040, 0x4a6080, 0x40703a, 0x9c5a2c,
 ];
 
-const WHEEL_RADIUS = 0.33;
-const WHEEL_LATERAL = 0.36;       // fraction of body bbox X
+const WHEEL_RADIUS_DEFAULT = 0.33;
+const WHEEL_LATERAL = 0.34;       // fraction of body bbox X
 const WHEEL_LONGITUDINAL = 0.30;  // fraction of body bbox Z
 
 function laneX(lane, direction) {
@@ -60,8 +60,9 @@ class TrafficCar {
       ? realTemplates[Math.floor(Math.random() * realTemplates.length)]
       : null;
     const templateRoot = pick && pick.root ? pick.root : pick;
-    this._wheelLat  = (pick && pick.wheelLat)  || WHEEL_LATERAL;
-    this._wheelLong = (pick && pick.wheelLong) || WHEEL_LONGITUDINAL;
+    this._wheelLat    = (pick && pick.wheelLat)    || WHEEL_LATERAL;
+    this._wheelLong   = (pick && pick.wheelLong)   || WHEEL_LONGITUDINAL;
+    this._wheelRadius = (pick && pick.wheelRadius) || WHEEL_RADIUS_DEFAULT;
 
     const inner = templateRoot
       ? templateRoot.clone(true)
@@ -78,31 +79,39 @@ class TrafficCar {
     const size = bbox.getSize(new THREE.Vector3());
     const fullX = size.x || CAR.width;
     const fullZ = size.z || CAR.length;
-    const r = WHEEL_RADIUS;
+    const r = this._wheelRadius ?? WHEEL_RADIUS_DEFAULT;
     const dx = fullX * (this._wheelLat  ?? WHEEL_LATERAL);
     const dz = fullZ * (this._wheelLong ?? WHEEL_LONGITUDINAL);
+    // Index 0/1 = front (smaller Z) so the brain can steer just the front pair.
     const hubs = [
-      { x: -dx, y: r, z: -dz },
-      { x:  dx, y: r, z: -dz },
-      { x: -dx, y: r, z:  dz },
-      { x:  dx, y: r, z:  dz },
+      { x: -dx, y: r, z: -dz, isFront: true  },
+      { x:  dx, y: r, z: -dz, isFront: true  },
+      { x: -dx, y: r, z:  dz, isFront: false },
+      { x:  dx, y: r, z:  dz, isFront: false },
     ];
     for (const h of hubs) {
-      const spin = new THREE.Group();
-      spin.position.set(h.x, h.y, h.z);
+      // YXZ rotation order: Y (steer) is applied first, then X (spin),
+      // so the steer rotates around vertical without wobbling the axle.
+      const pivot = new THREE.Group();
+      pivot.rotation.order = 'YXZ';
+      pivot.position.set(h.x, h.y, h.z);
       let wheel;
       if (wheelTemplate) {
         wheel = wheelTemplate.clone(true);
+        // Scale the wheel template to match per-vehicle radius (template is
+        // sized to ~0.72 m diameter by normalizeWheelModel for the Porsche).
+        const desiredDiameter = r * 2;
+        wheel.scale.multiplyScalar(desiredDiameter / 0.72);
         if (h.x < 0) wheel.rotation.y += Math.PI;
       } else {
-        const geo = new THREE.CylinderGeometry(WHEEL_RADIUS, WHEEL_RADIUS, 0.26, 14);
+        const geo = new THREE.CylinderGeometry(r, r, 0.26, 14);
         const mat = new THREE.MeshStandardMaterial({ color: 0x0a0a0c, roughness: 0.85 });
         wheel = new THREE.Mesh(geo, mat);
         wheel.rotation.z = Math.PI / 2;
       }
-      spin.add(wheel);
-      this.mesh.add(spin);
-      this.wheels.push(spin);
+      pivot.add(wheel);
+      this.mesh.add(pivot);
+      this.wheels.push({ pivot, isFront: h.isFront });
     }
   }
 
@@ -190,22 +199,31 @@ class TrafficCar {
     // ---- Move ----
     this.position.z -= this.direction * this.currentSpeed * dt;
 
-    // Hug the curving centerline at the lane offset
+    // Hug the curving centerline at the lane offset (gentler 3 m/s slide so
+    // lane changes feel deliberate, not snap-to).
     const targetX = centerlineX(this.position.z) + laneX(this.targetLane, this.direction);
     const dx = targetX - this.position.x;
-    const slide = Math.sign(dx) * Math.min(Math.abs(dx), 6 * dt);
+    const slide = Math.sign(dx) * Math.min(Math.abs(dx), 3 * dt);
     this.position.x += slide;
     if (Math.abs(dx) < 0.05) this.lane = this.targetLane;
 
     this.mesh.position.copy(this.position);
-    this.mesh.rotation.y = (this.direction === 1 ? Math.PI : 0) + (-slide * 0.6);
+    this.mesh.rotation.y = (this.direction === 1 ? Math.PI : 0) + (-slide * 0.4);
 
-    // Spin wheels with distance travelled. Negative sign because positive X
-    // rotation rolls the wheel "backward" from the right-side viewer (see
-    // highway-racer player-car notes for the sign derivation).
+    // Spin wheels with distance travelled. Front wheels also turn during a
+    // lane change so the steering reads.
     if (this.wheels.length > 0) {
-      this.wheelAngle -= (this.currentSpeed * dt) / WHEEL_RADIUS;
-      for (const w of this.wheels) w.rotation.x = this.wheelAngle;
+      const r = this._wheelRadius ?? WHEEL_RADIUS_DEFAULT;
+      this.wheelAngle -= (this.currentSpeed * dt) / r;
+      // Steering angle: front wheels point in the direction of the slide
+      // (signed by direction so it matches visually for both carriageways).
+      const targetSteer = Math.sign(dx) * Math.min(0.45, Math.abs(dx) * 0.35);
+      this._steerAngle = this._steerAngle ?? 0;
+      this._steerAngle += (targetSteer - this._steerAngle) * Math.min(1, dt * 6);
+      for (const w of this.wheels) {
+        w.pivot.rotation.x = this.wheelAngle;
+        w.pivot.rotation.y = w.isFront ? this._steerAngle : 0;
+      }
     }
 
     // Recycle when far behind

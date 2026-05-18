@@ -8,10 +8,13 @@ export const WORLD = {
   roadSegmentLength: 80,
   visibleSegments: 16,
   segmentCurveSamples: 12, // sub-quads per segment along the curve
-  groundColor: 0x35402b,        // green-grey daylight ground
-  skyTop: 0x76b6ed,             // bright blue zenith
-  skyBottom: 0xd0e3f0,          // pale horizon
-  fogColor: 0xc5d4e0,           // hazy daylight fog
+  groundColor: 0x35402b,
+  // Multi-stop sky gradient (top → mid → low → horizon)
+  skyTop: 0x4a96ec,
+  skyMid: 0x8ec5f0,
+  skyLow: 0xc9def0,
+  skyHorizon: 0xf3e5cc,
+  fogColor: 0xcfd9e0,
   fogNear: 120,
   fogFar: 1500,
   cityBlockOffsetX: 22,   // distance from road centerline to first building row
