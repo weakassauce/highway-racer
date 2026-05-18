@@ -252,9 +252,11 @@ class TrafficCar {
     if (this.wheels.length > 0) {
       const r = this._wheelRadius ?? WHEEL_RADIUS_DEFAULT;
       this.wheelAngle -= (this.currentSpeed * dt) / r;
-      // Steering angle: front wheels point in the direction of the slide
-      // (signed by direction so it matches visually for both carriageways).
-      const targetSteer = Math.sign(dx) * Math.min(0.45, Math.abs(dx) * 0.35);
+      // Steering angle: front wheels point in the direction of the slide.
+      // The wrapper rotates Y=π for direction +1, which flips the wheel-pivot's
+      // local steer axis relative to world X — so we negate by direction so
+      // the wheels actually point INTO the merge for both carriageways.
+      const targetSteer = -this.direction * Math.sign(dx) * Math.min(0.45, Math.abs(dx) * 0.35);
       this._steerAngle = this._steerAngle ?? 0;
       this._steerAngle += (targetSteer - this._steerAngle) * Math.min(1, dt * 6);
       for (const w of this.wheels) {

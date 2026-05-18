@@ -288,9 +288,144 @@ export class World {
     this._scatterTrees(seg, segZ);
 
     // Streetlights every other segment
-    if (Math.floor(-segZ / segLen) % 2 === 0) {
+    const segIdx = Math.floor(-segZ / segLen);
+    if (segIdx % 2 === 0) {
       this._addStreetlights(seg, ribs, halfRoadWidth);
     }
+    // Overpass bridge every 7 segments (~560 m apart)
+    if (segIdx % 7 === 3) {
+      this._addOverpass(seg, ribs, halfRoadWidth);
+    }
+    // Offramp every 9 segments, alternating sides
+    if (segIdx % 9 === 5) {
+      const side = (segIdx % 18 === 5) ? 1 : -1;
+      this._addOfframp(seg, ribs, halfRoadWidth, side);
+    }
+  }
+
+  // Concrete overpass spanning across the highway perpendicular to direction
+  // of travel. Two pillars per side, a thick deck, railings on top.
+  _addOverpass(seg, ribs, halfRoadWidth) {
+    const mid = ribs[Math.floor(ribs.length / 2)];
+    const cx = mid.cx;
+    const lz = mid.localZ;
+    // Tangent + perpendicular along the curve, so the deck sits square with
+    // the road even on a bend.
+    const tx = mid.lz, tz = -mid.lx; // perpendicular to lateral = forward
+    const px = mid.lx,  pz = mid.lz;  // lateral (across the road)
+
+    const pillarMat = new THREE.MeshStandardMaterial({ color: 0xa3a6ac, roughness: 0.75 });
+    const deckMat   = new THREE.MeshStandardMaterial({ color: 0x9da1a7, roughness: 0.75 });
+
+    const clearance = 7.5;
+    const deckW = 7;          // depth of the deck along road direction
+    const deckThick = 1.4;
+    const deckLen = (halfRoadWidth + 14) * 2; // span across road + abutments
+
+    // 4 pillars, one at each outboard corner of the deck
+    for (const sideSign of [-1, 1]) {
+      for (const longSign of [-1, 1]) {
+        const px2 = cx + px * sideSign * (halfRoadWidth + 4) + tx * longSign * (deckW / 2 - 0.5);
+        const pz2 = lz + pz * sideSign * (halfRoadWidth + 4) + tz * longSign * (deckW / 2 - 0.5);
+        const pillar = new THREE.Mesh(
+          new THREE.CylinderGeometry(0.9, 1.1, clearance + 0.7, 10),
+          pillarMat,
+        );
+        pillar.position.set(px2, (clearance + 0.7) / 2, pz2);
+        seg.add(pillar);
+      }
+    }
+
+    // Deck — wide box. Rotate to follow the road tangent.
+    const deck = new THREE.Mesh(
+      new THREE.BoxGeometry(deckLen, deckThick, deckW),
+      deckMat,
+    );
+    deck.position.set(cx, clearance + deckThick / 2, lz);
+    deck.rotation.y = Math.atan2(tx, tz);
+    seg.add(deck);
+
+    // Railings on both edges of the deck (along road direction)
+    for (const edgeSign of [-1, 1]) {
+      const rail = new THREE.Mesh(
+        new THREE.BoxGeometry(deckLen, 1.0, 0.25),
+        this._dividerMat,
+      );
+      rail.position.set(
+        cx + tx * edgeSign * (deckW / 2 - 0.15),
+        clearance + deckThick + 0.5,
+        lz + tz * edgeSign * (deckW / 2 - 0.15),
+      );
+      rail.rotation.y = Math.atan2(tx, tz);
+      seg.add(rail);
+    }
+  }
+
+  // Visual offramp: an asphalt ribbon that peels away from the carriageway
+  // edge, lined with Jersey barriers on the outside. side = +1 or -1.
+  _addOfframp(seg, ribs, halfRoadWidth, side) {
+    const samples = ribs.length - 1;
+    const startI = Math.floor(samples * 0.15);
+    const endI   = samples;
+    const rampWidth = 4.2;
+    const maxOut   = 14; // how far the ramp peels off the highway by segment-end
+
+    // Asphalt ribbon — quadratic-ease so the ramp gradually breaks away
+    const ramp = { verts: [], idx: [] };
+    const leftEdge  = { verts: [], idx: [] }; // outer Jersey barrier strip
+    for (let i = startI; i <= endI; i++) {
+      const r = ribs[i];
+      const t = (i - startI) / (endI - startI);
+      const eased = t * t; // grows slowly then faster
+      const inner = side * (halfRoadWidth + 0.6 + eased * maxOut);
+      const outer = inner + side * rampWidth;
+      const yLift = 0.007;
+      ramp.verts.push(
+        r.cx + r.lx * inner, yLift, r.localZ + r.lz * inner,
+        r.cx + r.lx * outer, yLift, r.localZ + r.lz * outer,
+      );
+      // outer barrier rib
+      leftEdge.verts.push(outer, r.cx, r.lx, r.localZ, r.lz);
+    }
+    const span = endI - startI;
+    for (let i = 0; i < span; i++) {
+      const a = i * 2, b = a + 1, c = a + 2, d = a + 3;
+      ramp.idx.push(a, c, b, b, c, d);
+    }
+    const g = new THREE.BufferGeometry();
+    g.setAttribute('position', new THREE.Float32BufferAttribute(ramp.verts, 3));
+    g.setIndex(ramp.idx);
+    g.computeVertexNormals();
+    seg.add(new THREE.Mesh(g, this._asphaltMat));
+
+    // Jersey barrier strip along the outer edge of the ramp.
+    const bv = [], bi = [];
+    const barrierH = 0.9, barrierW = 0.4;
+    for (let i = 0; i < leftEdge.verts.length; i += 5) {
+      const outerOffset = leftEdge.verts[i];
+      const cx = leftEdge.verts[i + 1];
+      const lx = leftEdge.verts[i + 2];
+      const z0 = leftEdge.verts[i + 3];
+      const lz = leftEdge.verts[i + 4];
+      const oInner = outerOffset + side * 0.05;
+      const oOuter = outerOffset + side * (0.05 + barrierW);
+      const xI = cx + lx * oInner, zI = z0 + lz * oInner;
+      const xO = cx + lx * oOuter, zO = z0 + lz * oOuter;
+      bv.push(xI, barrierH, zI, xO, barrierH, zO, xI, 0, zI, xO, 0, zO);
+    }
+    const nRibs = leftEdge.verts.length / 5;
+    for (let i = 0; i < nRibs - 1; i++) {
+      const a = i * 4, b = (i + 1) * 4;
+      // top + outer face + inner face
+      bi.push(a, b, a + 1, a + 1, b, b + 1);
+      bi.push(a + 1, b + 1, a + 3, a + 3, b + 1, b + 3);
+      bi.push(a, a + 2, b, b, a + 2, b + 2);
+    }
+    const gb = new THREE.BufferGeometry();
+    gb.setAttribute('position', new THREE.Float32BufferAttribute(bv, 3));
+    gb.setIndex(bi);
+    gb.computeVertexNormals();
+    seg.add(new THREE.Mesh(gb, this._dividerMat));
   }
 
   _addDashedLine(seg, ribs, offset, width, material) {
