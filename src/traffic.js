@@ -165,15 +165,13 @@ class TrafficCar {
     // 1) Look-ahead in current lane; brake or change lane if blocked.
     const ahead = this._scanAhead(allCars, this.lane, 120);
     if (ahead) {
-      // Match speed of car ahead, biased lower so we naturally open the gap.
-      const target = Math.min(this.nominalSpeed, ahead.car.currentSpeed * 0.85);
-      // Tight gap → emergency brake (target well under their speed).
-      if (ahead.gap < 14) {
-        this.targetSpeed = Math.max(4, ahead.car.currentSpeed - 10);
-      } else if (ahead.gap < 30) {
-        this.targetSpeed = Math.max(8, ahead.car.currentSpeed - 4);
+      // Match speed of car ahead — keep up rather than fall back so traffic
+      // stays flowing. Only really brake when the gap is critically tight.
+      const matched = Math.min(this.nominalSpeed, ahead.car.currentSpeed);
+      if (ahead.gap < 12) {
+        this.targetSpeed = Math.max(8, ahead.car.currentSpeed - 5);
       } else {
-        this.targetSpeed = target;
+        this.targetSpeed = matched;
       }
       // Try to lane-change when the gap is shrinking — bigger window, more
       // willing to try, so we don't pile up behind a slow car.
@@ -312,7 +310,8 @@ export class TrafficManager {
         if (overlapX <= 0 || overlapZ <= 0) continue;
 
         // Push apart along the axis with the SMALLER overlap (resolves into
-        // the nearer free direction).
+        // the nearer free direction). Position-only — touching speed every
+        // frame compounded all the traffic to a standstill.
         if (overlapX < overlapZ) {
           const push = overlapX * 0.5 * Math.sign(dx || 1);
           a.position.x -= push;
@@ -321,10 +320,6 @@ export class TrafficManager {
           const push = overlapZ * 0.5 * Math.sign(dz || 1);
           a.position.z -= push;
           b.position.z += push;
-          // Longitudinal collision — the trailing car eases off so the
-          // pair separates instead of grinding.
-          const trailing = (a.direction === 1 ? dz > 0 : dz < 0) ? a : b;
-          trailing.currentSpeed = Math.min(trailing.currentSpeed, trailing.currentSpeed * 0.92);
         }
       }
     }
