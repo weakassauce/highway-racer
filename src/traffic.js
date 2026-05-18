@@ -111,7 +111,7 @@ class TrafficCar {
     this.currentSpeed = this.nominalSpeed;
     this.targetSpeed = this.nominalSpeed;
     this.mesh.position.copy(this.position);
-    this.mesh.rotation.y = this.direction === 1 ? 0 : Math.PI;
+    this.mesh.rotation.y = this.direction === 1 ? Math.PI : 0;
   }
 
   // Look-ahead query: find the nearest other car in front of us in the
