@@ -163,18 +163,26 @@ class TrafficCar {
   update(dt, playerZ, allCars) {
     // ---- Brain ----
     // 1) Look-ahead in current lane; brake or change lane if blocked.
-    const ahead = this._scanAhead(allCars, this.lane, 80);
+    const ahead = this._scanAhead(allCars, this.lane, 120);
     if (ahead) {
-      // Match speed of slower car ahead; brake harder if gap is tight.
-      const target = Math.min(this.nominalSpeed, ahead.car.currentSpeed * 0.95);
-      this.targetSpeed = ahead.gap < 18 ? Math.max(6, ahead.car.currentSpeed - 6) : target;
-      // Try to lane-change when the gap is tightening
-      if (this.lane === this.targetLane && ahead.gap < 36 && Math.random() < 0.08) {
+      // Match speed of car ahead, biased lower so we naturally open the gap.
+      const target = Math.min(this.nominalSpeed, ahead.car.currentSpeed * 0.85);
+      // Tight gap → emergency brake (target well under their speed).
+      if (ahead.gap < 14) {
+        this.targetSpeed = Math.max(4, ahead.car.currentSpeed - 10);
+      } else if (ahead.gap < 30) {
+        this.targetSpeed = Math.max(8, ahead.car.currentSpeed - 4);
+      } else {
+        this.targetSpeed = target;
+      }
+      // Try to lane-change when the gap is shrinking — bigger window, more
+      // willing to try, so we don't pile up behind a slow car.
+      if (this.lane === this.targetLane && ahead.gap < 55 && Math.random() < 0.16) {
         const candidates = [this.lane - 1, this.lane + 1].filter(
           l => l >= 0 && l < WORLD.lanesPerSide,
         );
         for (const c of candidates.sort(() => Math.random() - 0.5)) {
-          if (this._laneClear(allCars, c, 12, 40)) {
+          if (this._laneClear(allCars, c, 16, 50)) {
             this.targetLane = c;
             break;
           }
@@ -283,29 +291,41 @@ export class TrafficManager {
 
   initialSpawn(playerZ) { for (const c of this.cars) c.spawnAhead(playerZ); }
 
-  // Position-only separation between same-lane same-direction NPCs. This is
-  // a last-resort backstop; the brain handles ordinary spacing. We DON'T
-  // touch currentSpeed here (used to brake both by 15% per frame, which
-  // compounded everyone to a standstill in seconds).
+  // AABB-based separation between any pair of same-direction NPCs. Cars are
+  // long and narrow, so an isotropic radius check missed crossing-lane
+  // near-misses. We use the dominant overlap axis to push them apart and
+  // also brake the faster car if we hit a longitudinal overlap (rear-end).
   _separate() {
-    const minSep = CAR.length * 0.95;
-    const minSep2 = minSep * minSep;
+    const halfLen = CAR.length * 0.55; // bit of buffer beyond the visible body
+    const halfWid = CAR.width  * 0.55;
     for (let i = 0; i < this.cars.length; i++) {
       for (let j = i + 1; j < this.cars.length; j++) {
         const a = this.cars[i], b = this.cars[j];
         if (a.direction !== b.direction) continue;
-        if (a.lane !== b.lane && a.targetLane !== b.lane && a.lane !== b.targetLane) continue;
         const dx = b.position.x - a.position.x;
         const dz = b.position.z - a.position.z;
-        const d2 = dx * dx + dz * dz;
-        if (d2 > minSep2 || d2 < 1e-6) continue;
-        const d = Math.sqrt(d2);
-        const overlap = minSep - d;
-        const nx = dx / d, nz = dz / d;
-        a.position.x -= nx * overlap * 0.5;
-        a.position.z -= nz * overlap * 0.5;
-        b.position.x += nx * overlap * 0.5;
-        b.position.z += nz * overlap * 0.5;
+        const dxAbs = Math.abs(dx);
+        const dzAbs = Math.abs(dz);
+        // AABB intersection envelope
+        const overlapX = (halfWid * 2) - dxAbs;
+        const overlapZ = (halfLen * 2) - dzAbs;
+        if (overlapX <= 0 || overlapZ <= 0) continue;
+
+        // Push apart along the axis with the SMALLER overlap (resolves into
+        // the nearer free direction).
+        if (overlapX < overlapZ) {
+          const push = overlapX * 0.5 * Math.sign(dx || 1);
+          a.position.x -= push;
+          b.position.x += push;
+        } else {
+          const push = overlapZ * 0.5 * Math.sign(dz || 1);
+          a.position.z -= push;
+          b.position.z += push;
+          // Longitudinal collision — the trailing car eases off so the
+          // pair separates instead of grinding.
+          const trailing = (a.direction === 1 ? dz > 0 : dz < 0) ? a : b;
+          trailing.currentSpeed = Math.min(trailing.currentSpeed, trailing.currentSpeed * 0.92);
+        }
       }
     }
   }

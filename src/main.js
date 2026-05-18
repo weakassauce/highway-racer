@@ -131,7 +131,7 @@ const TRAFFIC_VARIANTS = [
   // actual axle position is well inside the body envelope.
   // extraLift jacks the truck up off the road like a lifted truck would be.
   { url: '/assets/traffic_ram.glb',     length: 6.8, wheelLat: 0.28, wheelLong: 0.30, wheelRadius: 0.46, extraRotY: 0,       extraLift: 0.45 },
-  { url: '/assets/traffic_tesla.glb',   length: 5.0, wheelLat: 0.30, wheelLong: 0.30, wheelRadius: 0.34, extraRotY: 0,       extraLift: 0    },
+  { url: '/assets/traffic_tesla.glb',   length: 5.0, wheelLat: 0.34, wheelLong: 0.30, wheelRadius: 0.34, extraRotY: 0,       extraLift: 0    },
   { url: '/assets/traffic_mustang.glb', length: 4.7, wheelLat: 0.30, wheelLong: 0.32, wheelRadius: 0.34, extraRotY: Math.PI, extraLift: 0    },
 ];
 
